@@ -1,0 +1,15 @@
+[package]
+name = "vmb-sys"
+version = "0.1.0"
+edition = "2021"
+description = "Raw FFI bindings to Allied Vision VmbC (Vimba X) C API"
+publish = false
+links = "VmbC"
+
+[features]
+default = []
+# Enables SDK discovery + linking. Requires VIMBA_X_HOME env var on Linux
+# or /Library/Frameworks/VmbC.framework on macOS. Without this feature the
+# crate compiles to a stub rlib (extern declarations only, no linking),
+# allowing `cargo build --workspace` to succeed without the SDK.
+sdk = []
