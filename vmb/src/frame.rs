@@ -20,7 +20,16 @@ pub struct Frame<'a> {
     pub height: u32,
     /// Decoded pixel format.
     pub pixel_format: PixelFormat,
-    /// SDK-provided timestamp in nanoseconds.
+    /// Wall-clock timestamp captured by the trampoline at frame
+    /// arrival, expressed in nanoseconds since the Unix epoch.
+    ///
+    /// This is intentionally NOT the GenICam `Timestamp` register on
+    /// `VmbFrame_t`, which is camera-clock-relative (counts from the
+    /// camera's last power-on for most Allied Vision USB models) and
+    /// therefore unsuitable for any wall-clock-aware downstream
+    /// consumer (date-partitioned upload keys, clip event timestamps,
+    /// log correlation). Use the host clock if you need precise
+    /// camera-clock semantics — that field is not currently exposed.
     pub timestamp_ns: u64,
     /// Monotonically increasing frame identifier assigned by the SDK.
     pub frame_id: u64,

@@ -159,12 +159,25 @@ pub(crate) unsafe extern "C" fn frame_callback_trampoline(
                 unsafe { slice::from_raw_parts(data_ptr, data_len) }
             };
 
+            // Wall-clock host timestamp for the frame, captured at the
+            // moment the SDK delivered it. We deliberately do NOT use
+            // `frame.timestamp` (the GenICam Timestamp register) because
+            // that counter is camera-clock-relative — typically counts
+            // from the camera's last power-on, which produces nonsensical
+            // dates downstream (e.g. "1970_01_22" upload-key partitions).
+            // The legacy `camera_app` C++ binary used the host clock for
+            // the same reason.
+            let host_ts_ns = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0);
+
             let rust_frame = Frame {
                 data: data_slice,
                 width: frame.width,
                 height: frame.height,
                 pixel_format: PixelFormat::from_raw(frame.pixelFormat),
-                timestamp_ns: frame.timestamp,
+                timestamp_ns: host_ts_ns,
                 frame_id: frame.frameID,
             };
 
@@ -319,7 +332,24 @@ mod tests {
         assert_eq!(g.height, 4);
         assert_eq!(g.pixel_format, Some(PixelFormat::Mono8));
         assert_eq!(g.frame_id, 42);
-        assert_eq!(g.timestamp_ns, 1_234_567_890);
+        // The trampoline must populate `timestamp_ns` with wall-clock
+        // (host) nanoseconds since the Unix epoch — NOT the camera's
+        // GenICam Timestamp register, which is camera-clock-relative
+        // (typically counts from power-on). Downstream consumers
+        // (upload-key date partition, clip event timestamps) require
+        // wall-clock time for correct date math. We ensure this by
+        // checking the captured value is clearly a wall-clock value
+        // and clearly NOT the camera value we wrote into VmbFrame_t.
+        assert_ne!(
+            g.timestamp_ns, 1_234_567_890,
+            "trampoline must NOT pass through the camera timestamp"
+        );
+        const JAN_1_2024_NS: u64 = 1_704_067_200_000_000_000;
+        assert!(
+            g.timestamp_ns >= JAN_1_2024_NS,
+            "trampoline must populate wall-clock ns since epoch (>= 2024-01-01); got {}",
+            g.timestamp_ns
+        );
         assert_eq!(g.data_len, 16);
 
         // Keep `buffer` alive until after the trampoline call: dropping the

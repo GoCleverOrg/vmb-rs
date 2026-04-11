@@ -58,13 +58,29 @@ fn main() {
         other => panic!("unsupported target architecture for VmbC: {other}"),
     };
 
-    let lib_dir = vimba_home.join("api").join("lib").join(arch_dir);
-    if !lib_dir.exists() {
+    // Vimba X SDK layouts vary across versions and installers:
+    //   * Older / multi-arch installers: `${VIMBA_X_HOME}/api/lib/${arch}/libVmbC.so`
+    //   * Newer / single-arch installers (e.g. Vimba X 2023-4 Linux x86_64):
+    //     `${VIMBA_X_HOME}/api/lib/libVmbC.so` (flat, no arch subdir)
+    //
+    // Probe the arch-nested layout first for backward compatibility, then
+    // fall back to the flat layout. If neither exists, panic with both
+    // candidate paths so the operator can see what was tried.
+    let arch_lib_dir = vimba_home.join("api").join("lib").join(arch_dir);
+    let flat_lib_dir = vimba_home.join("api").join("lib");
+
+    let lib_dir = if arch_lib_dir.join("libVmbC.so").exists() {
+        arch_lib_dir
+    } else if flat_lib_dir.join("libVmbC.so").exists() {
+        flat_lib_dir
+    } else {
         panic!(
-            "Expected VmbC library directory not found at {}",
-            lib_dir.display()
+            "libVmbC.so not found in {} or {}. \
+             Verify the Vimba X SDK install and set VIMBA_X_HOME to the SDK install root.",
+            arch_lib_dir.display(),
+            flat_lib_dir.display()
         );
-    }
+    };
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=VmbC");
