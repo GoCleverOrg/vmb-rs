@@ -1,10 +1,10 @@
 //! Safe Rust wrapper around Allied Vision Vimba X (VmbC).
 //!
 //! This crate wraps the raw `vmb-sys` FFI bindings with RAII-driven resource
-//! ownership and a typed error type. It focuses on the minimal surface the
-//! `mira-ingest` Vimba source needs: start/shutdown the runtime, enumerate
-//! cameras, open a camera, load a settings XML, start/stop capture, and
-//! register plug/unplug callbacks.
+//! ownership and a typed error type. It exposes a minimal surface for the
+//! common Vimba workflows: start/shutdown the runtime, enumerate cameras,
+//! open a camera, load a settings XML, start/stop capture, and register
+//! plug/unplug callbacks.
 //!
 //! # Feature flags
 //!

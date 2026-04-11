@@ -47,15 +47,20 @@ cargo build -p vmb-sys --features sdk
 ## Regenerating bindings
 
 The bindings in `src/bindings.rs` are **committed to the repository** and are
-*not* regenerated at build time. This keeps builds deterministic and avoids
-requiring `bindgen` (or the SDK headers) on every developer machine.
+*not* regenerated at build time. This keeps builds deterministic, avoids
+requiring `bindgen` (or the SDK headers) on every developer machine, and
+makes the crate publishable to crates.io.
 
-To refresh the bindings after an SDK upgrade:
+To refresh the bindings after an SDK upgrade, run `bindgen` against
+`wrapper.h` with the Vimba X include path:
 
 ```sh
-scripts/regenerate-vmb-bindings.sh
+bindgen wrapper.h \
+  -o src/bindings.rs \
+  --allowlist-function 'Vmb.*' \
+  --allowlist-type 'Vmb.*' \
+  --allowlist-var 'Vmb.*' \
+  -- -I"${VIMBA_X_HOME}/api/include"
 ```
 
-The script wraps a `bindgen` invocation against `wrapper.h` and writes the
-result back to `vendor/vmb-sys/src/bindings.rs`. Review the diff carefully
-before committing.
+Review the diff carefully before committing.

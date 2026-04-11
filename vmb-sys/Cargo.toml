@@ -1,9 +1,15 @@
 [package]
 name = "vmb-sys"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 description = "Raw FFI bindings to Allied Vision VmbC (Vimba X) C API"
-publish = false
+readme = "README.md"
+keywords = ["vimba", "allied-vision", "camera", "ffi", "bindgen"]
+categories = ["external-ffi-bindings", "api-bindings", "hardware-support"]
 links = "VmbC"
 
 [features]

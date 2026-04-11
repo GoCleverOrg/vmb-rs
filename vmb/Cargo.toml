@@ -1,17 +1,23 @@
 [package]
 name = "vmb"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 description = "Safe Rust wrapper around Allied Vision Vimba X (VmbC)"
-publish = false
+readme = "README.md"
+keywords = ["vimba", "allied-vision", "camera", "vision", "sdk"]
+categories = ["api-bindings", "hardware-support", "multimedia::images"]
 
 [features]
 default = []
-# Enables the real Vimba SDK backend. When off, the crate exposes a minimal
-# stub so `cargo build --workspace` succeeds without the SDK installed.
+# Enables the real Vimba SDK backend via `vmb-sys/sdk`. When off, the crate
+# exposes a minimal stub so `cargo build` succeeds without the SDK installed.
 sdk = ["vmb-sys/sdk"]
 
 [dependencies]
-vmb-sys = { path = "../vmb-sys", version = "0.1.0" }
+vmb-sys = { version = "0.1.0", path = "../vmb-sys" }
 thiserror = { workspace = true }
 tracing = { workspace = true }

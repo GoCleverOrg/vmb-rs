@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish vmb-sys
+        run: cargo publish -p vmb-sys
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for vmb-sys to become visible on crates.io
+        run: sleep 30
+
+      - name: Publish vmb
+        run: cargo publish -p vmb
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
