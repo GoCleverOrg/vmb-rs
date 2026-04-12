@@ -95,3 +95,35 @@ jobs:
         with:
           tool: cargo-shear
       - run: cargo shear
+
+  mutants:
+    name: Mutation Testing (vmb-core)
+    runs-on: ubuntu-latest
+    # PRs gate on diff-scoped mutants; pushes to main run the full sweep.
+    # Either way, `vmb-core` is the only crate under the mutation gate —
+    # `vmb-ffi` is SDK-dependent and verified on hardware-backed runners.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+      - name: Pre-build baseline tests
+        run: cargo test --workspace --no-run
+      - name: Run mutants (diff-scoped on PRs, full on main)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin ${{ github.base_ref }} --depth=1
+            git diff origin/${{ github.base_ref }} > /tmp/pr.diff
+            cargo mutants --package vmb-core \
+              --timeout=120 --in-place \
+              --in-diff /tmp/pr.diff \
+              --baseline=skip --profile=mutants-bench
+          else
+            cargo mutants --package vmb-core \
+              --timeout=120 --in-place \
+              --baseline=skip --profile=mutants-bench
+          fi
