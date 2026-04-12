@@ -13,3 +13,12 @@ rust-version = "1.84"
 [workspace.dependencies]
 thiserror = "1.0"
 tracing = "0.1"
+
+# Scoped profile for cargo-mutants runs. Inherits from `dev` so incremental
+# compilation still works across experiments; trims debuginfo and forces a
+# single codegen unit for marginally faster warm-path rebuilds. Applied via
+# `cargo mutants --profile=mutants-bench` from the Makefile targets.
+[profile.mutants-bench]
+inherits = "dev"
+codegen-units = 1
+debug = 0

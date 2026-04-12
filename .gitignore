@@ -2,3 +2,24 @@
 Cargo.lock
 *.swp
 .DS_Store
+
+# Claude Code worktrees
+.claude/worktrees/
+.worktrees/
+
+# Nix / direnv
+**/.direnv/
+!**/.direnv/*.envrc
+!**/.direnv/.envrc
+
+# Mutation testing artifacts
+**/mutants.out/
+**/mutants.out.old/
+mutants-perf.tsv
+mutants-bench.log
+
+# Environment
+.env
+
+# Logs
+*.log
