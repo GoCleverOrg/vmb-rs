@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to (re)publish, e.g., 0.1.0. Skipped if already on crates.io.'
+        required: true
+        default: '0.1.0'
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,15 +22,66 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Resolve target version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Target version: $version"
+
+      - name: Check if vmb-sys already on crates.io
+        id: check-vmb-sys
+        run: |
+          current=$(curl -fsS "https://crates.io/api/v1/crates/vmb-sys" 2>/dev/null | jq -r '.crate.max_version // ""' || echo "")
+          target="${{ steps.version.outputs.version }}"
+          if [ "$current" = "$target" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::vmb-sys $target already on crates.io; skipping publish"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Will publish vmb-sys $target (crates.io current: ${current:-none})"
+          fi
+
       - name: Publish vmb-sys
-        run: cargo publish -p vmb-sys
+        if: steps.check-vmb-sys.outputs.skip != 'true'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN_RAW: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          # Defensive whitespace strip. The crates.io server rejects tokens
+          # containing any whitespace with a confusing "token format 401"
+          # error — observed once in v0.1.0 release when the secret was
+          # configured via `gh secret set --body -` (stdin may append a
+          # trailing newline). Stripping here is cheap insurance against
+          # recurrence.
+          token="${CARGO_REGISTRY_TOKEN_RAW//[[:space:]]/}"
+          echo "Token length: raw=${#CARGO_REGISTRY_TOKEN_RAW} stripped=${#token}"
+          CARGO_REGISTRY_TOKEN="$token" cargo publish -p vmb-sys
 
       - name: Wait for vmb-sys to become visible on crates.io
+        if: steps.check-vmb-sys.outputs.skip != 'true'
         run: sleep 30
 
+      - name: Check if vmb already on crates.io
+        id: check-vmb
+        run: |
+          current=$(curl -fsS "https://crates.io/api/v1/crates/vmb" 2>/dev/null | jq -r '.crate.max_version // ""' || echo "")
+          target="${{ steps.version.outputs.version }}"
+          if [ "$current" = "$target" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::vmb $target already on crates.io; skipping publish"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Will publish vmb $target (crates.io current: ${current:-none})"
+          fi
+
       - name: Publish vmb
-        run: cargo publish -p vmb
+        if: steps.check-vmb.outputs.skip != 'true'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN_RAW: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          token="${CARGO_REGISTRY_TOKEN_RAW//[[:space:]]/}"
+          CARGO_REGISTRY_TOKEN="$token" cargo publish -p vmb
