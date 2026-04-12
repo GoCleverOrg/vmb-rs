@@ -69,7 +69,7 @@ MUTANTS_TIMEOUT ?= 120
 # Per-crate output layout: $(MUTANTS_OUT)/<crate>/mutants.out/{caught,missed,...}.txt
 # Lives under target/ so it's already gitignored.
 MUTANTS_OUT := target/mutants
-CRATES      := vmb vmb-sys
+CRATES      := vmb-core vmb-ffi vmb-fake vmb vmb-sys
 
 # Warm-path optimizations from the mira mutants-perf experiments.
 # See docs/mutants-perf-learnings.md in the mira repo for the 60-experiment

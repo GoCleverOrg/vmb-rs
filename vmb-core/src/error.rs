@@ -1,39 +1,21 @@
-//! Error type for the safe `vmb` wrapper.
+//! Error type shared by the `vmb-rs` domain and every `VmbRuntime` adapter.
 //!
 //! Vimba X itself returns `VmbError_t` (a signed 32-bit integer) from every
 //! call. This module maps non-success return codes into a rich [`VmbError`]
-//! enum that carries both the numeric code and a static human-readable name.
+//! enum that carries both the numeric code and a static human-readable
+//! name.
 //!
 //! The Vimba X C API does not expose a runtime error-to-string function, so
 //! the mapping from code to name is performed manually via [`error_name`]
 //! below. The list of codes is derived from `VmbErrorType` in
-//! `vmb_sys::bindings`.
+//! `vmb_sys::bindings`; a drift guard in the `vmb` facade verifies the two
+//! stay in sync.
 
 use std::path::PathBuf;
 
 use thiserror::Error;
 
-/// Convert a possibly-null C string pointer to an owned `String`, falling
-/// back to `fallback` when the pointer is null or the bytes are not valid
-/// UTF-8. Used by the safe wrapper wherever the SDK hands us a
-/// `*const c_char` we need to surface as a Rust string.
-///
-/// # Safety
-///
-/// If `ptr` is non-null, it MUST point to a NUL-terminated C string owned
-/// by someone else for the duration of the call. The caller is
-/// responsible for any thread-safety invariants of the underlying memory.
-#[cfg(feature = "sdk")]
-pub(crate) fn cstr_to_owned(ptr: *const std::os::raw::c_char, fallback: &str) -> String {
-    if ptr.is_null() {
-        return fallback.to_string();
-    }
-    // SAFETY: caller guarantees `ptr` is a valid NUL-terminated C string.
-    let cstr = unsafe { std::ffi::CStr::from_ptr(ptr) };
-    cstr.to_str()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|_| fallback.to_string())
-}
+use crate::Result;
 
 /// Errors returned by the safe `vmb` wrapper.
 #[derive(Debug, Error)]
@@ -90,15 +72,12 @@ pub enum VmbError {
     },
 }
 
-/// Convenience alias: `Result<T, VmbError>`.
-pub type Result<T> = std::result::Result<T, VmbError>;
-
 /// Map a Vimba error code to its static name. Returns `"VmbErrorUnknown"`
 /// for codes the wrapper doesn't know about.
 ///
-/// The list mirrors `vmb_sys::bindings::VmbErrorType`. It is `pub(crate)`
-/// because callers get the formatted string via `Display` on `VmbError`.
-pub(crate) const fn error_name(code: i32) -> &'static str {
+/// The list mirrors `vmb_sys::bindings::VmbErrorType`. The drift guard in
+/// the `vmb` facade's integration tests verifies the two stay in sync.
+pub const fn error_name(code: i32) -> &'static str {
     match code {
         0 => "VmbErrorSuccess",
         -1 => "VmbErrorInternalFault",
@@ -151,8 +130,7 @@ pub(crate) const fn error_name(code: i32) -> &'static str {
 /// Returns `Ok(())` if `code == 0` (success), and `Err(VmbError::Sdk { .. })`
 /// otherwise. The `message` is a generic placeholder — callers may wrap the
 /// result with `.map_err(...)` to add call-site context if they wish.
-#[cfg(feature = "sdk")]
-pub(crate) fn check(code: i32) -> Result<()> {
+pub fn check(code: i32) -> Result<()> {
     if code == 0 {
         Ok(())
     } else {
@@ -161,15 +139,6 @@ pub(crate) fn check(code: i32) -> Result<()> {
             message: format!("VmbC call failed ({})", error_name(code)),
         })
     }
-}
-
-/// Stub `check` for builds without the `sdk` feature. The safe wrapper only
-/// invokes VmbC calls under `#[cfg(feature = "sdk")]`, so this should never
-/// be reached at runtime.
-#[cfg(not(feature = "sdk"))]
-#[allow(dead_code)]
-pub(crate) fn check(_code: i32) -> Result<()> {
-    unreachable!("vmb::error::check called without the `sdk` feature")
 }
 
 #[cfg(test)]
@@ -191,6 +160,64 @@ mod tests {
     }
 
     #[test]
+    fn error_name_covers_every_documented_code() {
+        // Exhaustive over the full -41..=1 range (the SDK's current
+        // numeric space). Deletion mutants on individual arms are
+        // caught because removing any arm would reroute that code to
+        // `VmbErrorUnrecognized`.
+        let expected: &[(i32, &str)] = &[
+            (0, "VmbErrorSuccess"),
+            (-1, "VmbErrorInternalFault"),
+            (-2, "VmbErrorApiNotStarted"),
+            (-3, "VmbErrorNotFound"),
+            (-4, "VmbErrorBadHandle"),
+            (-5, "VmbErrorDeviceNotOpen"),
+            (-6, "VmbErrorInvalidAccess"),
+            (-7, "VmbErrorBadParameter"),
+            (-8, "VmbErrorStructSize"),
+            (-9, "VmbErrorMoreData"),
+            (-10, "VmbErrorWrongType"),
+            (-11, "VmbErrorInvalidValue"),
+            (-12, "VmbErrorTimeout"),
+            (-13, "VmbErrorOther"),
+            (-14, "VmbErrorResources"),
+            (-15, "VmbErrorInvalidCall"),
+            (-16, "VmbErrorNoTL"),
+            (-17, "VmbErrorNotImplemented"),
+            (-18, "VmbErrorNotSupported"),
+            (-19, "VmbErrorIncomplete"),
+            (-20, "VmbErrorIO"),
+            (-21, "VmbErrorValidValueSetNotPresent"),
+            (-22, "VmbErrorGenTLUnspecified"),
+            (-23, "VmbErrorUnspecified"),
+            (-24, "VmbErrorBusy"),
+            (-25, "VmbErrorNoData"),
+            (-26, "VmbErrorParsingChunkData"),
+            (-27, "VmbErrorInUse"),
+            (-28, "VmbErrorUnknown"),
+            (-29, "VmbErrorXml"),
+            (-30, "VmbErrorNotAvailable"),
+            (-31, "VmbErrorNotInitialized"),
+            (-32, "VmbErrorInvalidAddress"),
+            (-33, "VmbErrorAlready"),
+            (-34, "VmbErrorNoChunkData"),
+            (-35, "VmbErrorUserCallbackException"),
+            (-36, "VmbErrorFeaturesUnavailable"),
+            (-37, "VmbErrorTLNotFound"),
+            (-39, "VmbErrorAmbiguous"),
+            (-40, "VmbErrorRetriesExceeded"),
+            (-41, "VmbErrorInsufficientBufferCount"),
+            (1, "VmbErrorCustom"),
+        ];
+        for (code, name) in expected {
+            assert_eq!(error_name(*code), *name, "wrong name for code {code}");
+        }
+        // A known gap in the SDK's enum (code `-38` is unused) must
+        // fall through to the catch-all.
+        assert_eq!(error_name(-38), "VmbErrorUnrecognized");
+    }
+
+    #[test]
     fn display_includes_error_name() {
         let err = VmbError::Sdk {
             code: -4,
@@ -201,33 +228,59 @@ mod tests {
         assert!(s.contains("bad handle"));
     }
 
-    /// Drift guard: ensure our handwritten `error_name` mapping stays in
-    /// sync with bindgen's `Debug` impl on `VmbErrorType`. If bindings are
-    /// regenerated and a variant is renamed, this test will fail for the
-    /// sampled codes.
-    ///
-    /// We sample rather than exhaustively iterate because `VmbErrorType`
-    /// is `#[non_exhaustive]` and we don't want to add a `num_enum`
-    /// dependency just for this test.
     #[test]
-    fn error_name_matches_bindgen_debug_for_sampled_variants() {
-        use vmb_sys::VmbErrorType;
-        let cases = [
-            VmbErrorType::VmbErrorSuccess,
-            VmbErrorType::VmbErrorInternalFault,
-            VmbErrorType::VmbErrorBadHandle,
-            VmbErrorType::VmbErrorBadParameter,
-            VmbErrorType::VmbErrorTimeout,
-            VmbErrorType::VmbErrorIO,
-        ];
-        for variant in cases {
-            let code = variant as i32;
-            let name = error_name(code);
-            let debug_name = format!("{variant:?}");
-            assert_eq!(
-                name, debug_name,
-                "drift for code {code}: handwritten={name}, bindgen={debug_name}"
-            );
+    fn check_success_is_ok() {
+        assert!(check(0).is_ok());
+    }
+
+    #[test]
+    fn check_error_is_sdk_with_code_and_name() {
+        match check(-4) {
+            Err(VmbError::Sdk { code, message }) => {
+                assert_eq!(code, -4);
+                assert!(message.contains("VmbErrorBadHandle"));
+            }
+            other => panic!("expected Err(Sdk), got {other:?}"),
         }
+    }
+
+    #[test]
+    fn display_invalid_string_includes_context() {
+        let err = VmbError::InvalidString {
+            context: "camera_id",
+        };
+        assert!(format!("{err}").contains("camera_id"));
+    }
+
+    #[test]
+    fn display_frame_too_small_includes_counts() {
+        let err = VmbError::FrameTooSmall {
+            expected: 100,
+            actual: 80,
+        };
+        let s = format!("{err}");
+        assert!(s.contains("100"));
+        assert!(s.contains("80"));
+    }
+
+    #[test]
+    fn display_io_includes_path() {
+        let err = VmbError::Io {
+            path: PathBuf::from("/tmp/does-not-exist.xml"),
+            source: std::io::Error::other("boom"),
+        };
+        let s = format!("{err}");
+        assert!(s.contains("does-not-exist.xml"));
+    }
+
+    #[test]
+    fn already_started_and_not_started_display() {
+        assert!(format!("{}", VmbError::AlreadyStarted).contains("already started"));
+        assert!(format!("{}", VmbError::NotStarted).contains("not been started"));
+    }
+
+    #[test]
+    fn capture_already_running_display() {
+        assert!(format!("{}", VmbError::CaptureAlreadyRunning).contains("already running"));
     }
 }

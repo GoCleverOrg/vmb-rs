@@ -1,0 +1,19 @@
+[package]
+authors.workspace = true
+categories = ["api-bindings", "hardware-support"]
+description = "Runtime-agnostic domain types and ports for vmb-rs (no FFI dependency)"
+edition.workspace = true
+keywords = ["vimba", "allied-vision", "camera", "vision", "ports-and-adapters"]
+license.workspace = true
+name = "vmb-core"
+readme = "README.md"
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+vmb-fake = { version = "0.2.0", path = "../vmb-fake" }
