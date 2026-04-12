@@ -36,7 +36,7 @@ jobs:
       - name: Check if vmb-sys already on crates.io
         id: check-vmb-sys
         run: |
-          current=$(curl -fsS "https://crates.io/api/v1/crates/vmb-sys" 2>/dev/null | jq -r '.crate.max_version // ""' || echo "")
+          current=$(curl -fsS -A "GoCleverOrg/vmb-rs release workflow (https://github.com/GoCleverOrg/vmb-rs)" "https://crates.io/api/v1/crates/vmb-sys" 2>/dev/null | jq -r '.crate.max_version // ""' || echo "")
           target="${{ steps.version.outputs.version }}"
           if [ "$current" = "$target" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -68,7 +68,7 @@ jobs:
       - name: Check if vmb already on crates.io
         id: check-vmb
         run: |
-          current=$(curl -fsS "https://crates.io/api/v1/crates/vmb" 2>/dev/null | jq -r '.crate.max_version // ""' || echo "")
+          current=$(curl -fsS -A "GoCleverOrg/vmb-rs release workflow (https://github.com/GoCleverOrg/vmb-rs)" "https://crates.io/api/v1/crates/vmb" 2>/dev/null | jq -r '.crate.max_version // ""' || echo "")
           target="${{ steps.version.outputs.version }}"
           if [ "$current" = "$target" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
