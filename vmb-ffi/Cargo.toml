@@ -1,0 +1,24 @@
+[package]
+authors.workspace = true
+categories = ["api-bindings", "external-ffi-bindings", "hardware-support"]
+description = "FFI adapter implementing the vmb-core VmbRuntime port against libVmbC"
+edition.workspace = true
+keywords = ["vimba", "allied-vision", "camera", "ffi", "adapter"]
+license.workspace = true
+name = "vmb-ffi"
+readme = "README.md"
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+default = []
+# Enables linking against the Vimba X SDK via `vmb-sys/sdk`. Without this
+# feature the crate compiles to an empty rlib — the VmbFfiRuntime type
+# only exists when the SDK is available.
+sdk = ["vmb-sys/sdk"]
+
+[dependencies]
+tracing = { workspace = true }
+vmb-core = { version = "0.2.0", path = "../vmb-core" }
+vmb-sys = { version = "0.2.0", path = "../vmb-sys" }

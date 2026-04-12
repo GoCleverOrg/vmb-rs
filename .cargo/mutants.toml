@@ -1,0 +1,5 @@
+# Generated FFI bindings have no hand-written logic to test. Excluding them
+# drops ~34% of mutants (all trivially missed) from every run.
+exclude_globs = [
+    "vmb-sys/src/bindings.rs",
+]

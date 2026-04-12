@@ -1,0 +1,15 @@
+[package]
+authors.workspace = true
+categories = ["api-bindings", "development-tools::testing", "hardware-support"]
+description = "In-memory VmbRuntime fake for unit testing code that consumes vmb-core"
+edition.workspace = true
+keywords = ["vimba", "testing", "fake", "mock", "camera"]
+license.workspace = true
+name = "vmb-fake"
+readme = "README.md"
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+vmb-core = { version = "0.2.0", path = "../vmb-core" }

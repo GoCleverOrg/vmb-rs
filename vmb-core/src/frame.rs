@@ -1,17 +1,18 @@
 //! Safe view over a Vimba X frame.
 //!
-//! A [`Frame`] is handed to user callbacks and borrows into Vimba's internal
-//! buffer for the duration of the call. It is intentionally **not**
-//! `'static` — the caller MUST either consume the data synchronously (e.g.
-//! copy it out via [`Frame::to_vec`]) or forward it through a bounded
-//! channel. Once the callback returns, Vimba re-queues the buffer and the
-//! underlying bytes may be overwritten at any moment.
+//! A [`Frame`] is handed to user callbacks and borrows into the adapter's
+//! internal buffer for the duration of the call. It is intentionally
+//! **not** `'static` — the caller MUST either consume the data
+//! synchronously (e.g. copy it out via [`Frame::to_vec`]) or forward it
+//! through a bounded channel. Once the callback returns, the adapter
+//! re-queues the buffer and the underlying bytes may be overwritten at
+//! any moment.
 
 /// Borrowed view of a single received frame.
 ///
-/// The lifetime `'a` is tied to the `VmbFrame_t` that the SDK passed into
-/// the trampoline; callers must not escape `Frame` past the end of their
-/// callback invocation.
+/// The lifetime `'a` is tied to the adapter-owned buffer that fed this
+/// invocation; callers must not escape `Frame` past the end of their
+/// callback.
 pub struct Frame<'a> {
     pub(crate) data: &'a [u8],
     /// Frame width in pixels.
@@ -20,29 +21,51 @@ pub struct Frame<'a> {
     pub height: u32,
     /// Decoded pixel format.
     pub pixel_format: PixelFormat,
-    /// Wall-clock timestamp captured by the trampoline at frame
-    /// arrival, expressed in nanoseconds since the Unix epoch.
+    /// Wall-clock timestamp captured by the adapter at frame arrival,
+    /// expressed in nanoseconds since the Unix epoch.
     ///
     /// This is intentionally NOT the GenICam `Timestamp` register on
     /// `VmbFrame_t`, which is camera-clock-relative (counts from the
     /// camera's last power-on for most Allied Vision USB models) and
-    /// therefore unsuitable for any wall-clock-aware downstream
-    /// consumer (date-partitioned upload keys, clip event timestamps,
-    /// log correlation). Use the host clock if you need precise
-    /// camera-clock semantics — that field is not currently exposed.
+    /// therefore unsuitable for wall-clock-aware downstream consumers.
     pub timestamp_ns: u64,
     /// Monotonically increasing frame identifier assigned by the SDK.
     pub frame_id: u64,
 }
 
 impl<'a> Frame<'a> {
+    /// Build a borrowed frame view. Intended to be called by a
+    /// [`VmbRuntime`] adapter (either the real FFI adapter or an
+    /// in-memory fake) after it has decoded the SDK's frame descriptor
+    /// into plain Rust types.
+    ///
+    /// [`VmbRuntime`]: crate::types
+    pub fn new(
+        data: &'a [u8],
+        width: u32,
+        height: u32,
+        pixel_format: PixelFormat,
+        timestamp_ns: u64,
+        frame_id: u64,
+    ) -> Self {
+        Self {
+            data,
+            width,
+            height,
+            pixel_format,
+            timestamp_ns,
+            frame_id,
+        }
+    }
+
     /// Raw byte view of the frame.
     pub fn data(&self) -> &[u8] {
         self.data
     }
 
     /// Copy the frame bytes into a new [`Vec<u8>`]. This is the typical
-    /// callback path: copy out before returning so Vimba can re-queue.
+    /// callback path: copy out before returning so the adapter can
+    /// re-queue.
     pub fn to_vec(&self) -> Vec<u8> {
         self.data.to_vec()
     }
@@ -108,17 +131,23 @@ mod tests {
     #[test]
     fn frame_basic_accessors() {
         let data = [1u8, 2, 3, 4, 5, 6, 7, 8];
-        let frame = Frame {
-            data: &data,
-            width: 2,
-            height: 4,
-            pixel_format: PixelFormat::Mono8,
-            timestamp_ns: 123,
-            frame_id: 7,
-        };
+        let frame = Frame::new(&data, 2, 4, PixelFormat::Mono8, 123, 7);
         assert_eq!(frame.len(), 8);
         assert!(!frame.is_empty());
         assert_eq!(frame.to_vec(), vec![1, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(frame.data(), &data);
+        assert_eq!(frame.width, 2);
+        assert_eq!(frame.height, 4);
+        assert_eq!(frame.pixel_format, PixelFormat::Mono8);
+        assert_eq!(frame.timestamp_ns, 123);
+        assert_eq!(frame.frame_id, 7);
+    }
+
+    #[test]
+    fn frame_is_empty_when_no_bytes() {
+        let frame = Frame::new(&[], 0, 0, PixelFormat::Mono8, 0, 0);
+        assert_eq!(frame.len(), 0);
+        assert!(frame.is_empty());
+        assert_eq!(frame.to_vec(), Vec::<u8>::new());
     }
 }

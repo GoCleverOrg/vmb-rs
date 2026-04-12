@@ -1,41 +1,51 @@
 //! Safe Rust wrapper around Allied Vision Vimba X (VmbC).
 //!
-//! This crate wraps the raw `vmb-sys` FFI bindings with RAII-driven resource
-//! ownership and a typed error type. It exposes a minimal surface for the
-//! common Vimba workflows: start/shutdown the runtime, enumerate cameras,
-//! open a camera, load a settings XML, start/stop capture, and register
-//! plug/unplug callbacks.
+//! This crate is the publishable facade of the `vmb-rs` workspace. It
+//! re-exports the domain types and ports from [`vmb_core`], and — when
+//! the `sdk` feature is enabled — the production [`VmbFfiRuntime`]
+//! adapter from [`vmb_ffi`] plus a convenience [`real`] constructor that
+//! wires the two together.
 //!
-//! # Feature flags
+//! ## Typical use
 //!
-//! * `sdk` (default **off**) — pulls in `vmb-sys/sdk` which links against
-//!   `libVmbC` (Linux) or `VmbC.framework` (macOS). Without this feature the
-//!   crate compiles to an empty stub and exposes only the error type.
+//! ```no_run
+//! # #[cfg(feature = "sdk")]
+//! # fn demo() -> vmb::Result<()> {
+//! let system = vmb::real()?;                   // starts the Vimba runtime
+//! let cameras = system.list_cameras()?;
+//! println!("{} camera(s) detected", cameras.len());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Feature flags
+//!
+//! * `sdk` (default **off**) — pulls in `vmb-ffi/sdk` which links
+//!   against `libVmbC` (Linux) or `VmbC.framework` (macOS). Without
+//!   this feature only the domain layer ([`VmbError`], [`Frame`], …)
+//!   is exposed and `cargo build` succeeds without the SDK installed.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-mod error;
-
-pub use error::{Result, VmbError};
-
-#[cfg(feature = "sdk")]
-mod callback;
-#[cfg(feature = "sdk")]
-mod camera;
-#[cfg(feature = "sdk")]
-mod discovery;
-#[cfg(feature = "sdk")]
-mod frame;
-#[cfg(feature = "sdk")]
-mod system;
+pub use vmb_core::{
+    check, error_name, register_camera_discovery, Camera, CameraHandle, CameraInfo,
+    DiscoveryCallback, DiscoveryCallbackId, DiscoveryEvent, DiscoveryRegistration,
+    DiscoveryRegistrationHandle, Frame, FrameCallback, FrameCallbackId, FrameSlotId, PixelFormat,
+    Result, VmbError, VmbRuntime, VmbSystem,
+};
 
 #[cfg(feature = "sdk")]
-pub use callback::FrameCallback;
+pub use vmb_ffi::VmbFfiRuntime;
+
+/// Alias for the production `VmbSystem` type, parameterised with the
+/// [`VmbFfiRuntime`] adapter.
 #[cfg(feature = "sdk")]
-pub use camera::{Camera, CameraInfo};
+pub type RealVmbSystem = vmb_core::VmbSystem<VmbFfiRuntime>;
+
+/// Start the Vimba X runtime via the production FFI adapter.
+///
+/// Shorthand for `VmbSystem::startup(VmbFfiRuntime::new())`.
 #[cfg(feature = "sdk")]
-pub use discovery::{register_camera_discovery, DiscoveryEvent, DiscoveryRegistration};
-#[cfg(feature = "sdk")]
-pub use frame::{Frame, PixelFormat};
-#[cfg(feature = "sdk")]
-pub use system::VmbSystem;
+pub fn real() -> Result<RealVmbSystem> {
+    vmb_core::VmbSystem::startup(VmbFfiRuntime::new())
+}
