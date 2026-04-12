@@ -1,1 +1,8 @@
+[files]
+# vmb-sys/src/bindings.rs is bindgen-generated from the Vimba X SDK
+# headers. We cannot control identifier spelling (`isWriteable`,
+# `Writeable`, ...) and regenerating bindings would overwrite any
+# manual edits.
+extend-exclude = ["vmb-sys/src/bindings.rs"]
+
 [default.extend-words]

@@ -13,7 +13,6 @@ version.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
-tracing = { workspace = true }
 
 [dev-dependencies]
 vmb-fake = { version = "0.2.0", path = "../vmb-fake" }
