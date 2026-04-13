@@ -26,6 +26,12 @@ registries = []
 highlight = "all"
 multiple-versions = "warn"
 wildcards = "deny"
+# Internal workspace dev-deps are intentionally path-only (no version)
+# to avoid publish-time dependency cycles between e.g. vmb-core and
+# vmb-fake. cargo-deny treats `{ path = "..." }` as a wildcard; this
+# knob narrows the rule so it still bans wildcards on external deps
+# but tolerates the internal path-only ones.
+allow-wildcard-paths = true
 
 [sources]
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
