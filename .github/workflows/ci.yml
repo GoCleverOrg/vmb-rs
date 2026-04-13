@@ -122,7 +122,14 @@ jobs:
         # already fails CI. The explicit assertion in the next step
         # turns the failure message into "score must be 100%, got N%"
         # so future readers see the contracted bar.
+        #
+        # `continue-on-error: true` so the assertion step always runs
+        # and produces the contracted error message. Both steps must
+        # pass for the job to succeed.
+        continue-on-error: true
+        id: sweep
         run: |
+          mkdir -p target/mutants/vmb-core
           cargo mutants --package vmb-core \
             --timeout=120 --in-place \
             --baseline=skip --profile=mutants-bench \
