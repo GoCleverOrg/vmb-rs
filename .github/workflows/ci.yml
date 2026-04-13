@@ -97,15 +97,19 @@ jobs:
       - run: cargo shear
 
   mutants:
-    name: Mutation Testing (vmb-core)
+    name: Mutation Testing (vmb-core, 100% gate)
     runs-on: ubuntu-latest
-    # PRs gate on diff-scoped mutants; pushes to main run the full sweep.
-    # Either way, `vmb-core` is the only crate under the mutation gate —
-    # `vmb-ffi` is SDK-dependent and verified on hardware-backed runners.
+    # `vmb-core` is the only crate under the mutation gate — vmb-ffi is
+    # SDK-dependent and verified on hardware-backed runners; vmb-fake
+    # is test infrastructure; vmb is a thin facade. See Makefile and
+    # .cargo/mutants.toml for the rationale.
+    #
+    # The full sweep (~90s on the current crate size) runs on every PR,
+    # not just diff-scoped, so a PR that deletes a test which used to
+    # kill a mutant on UNCHANGED code is rejected at PR time rather
+    # than discovered post-merge.
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -113,17 +117,50 @@ jobs:
           tool: cargo-mutants
       - name: Pre-build baseline tests
         run: cargo test --workspace --no-run
-      - name: Run mutants (diff-scoped on PRs, full on main)
+      - name: Run full mutation sweep on vmb-core
+        # cargo-mutants exits 1 if any mutant is missed; that alone
+        # already fails CI. The explicit assertion in the next step
+        # turns the failure message into "score must be 100%, got N%"
+        # so future readers see the contracted bar.
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch origin ${{ github.base_ref }} --depth=1
-            git diff origin/${{ github.base_ref }} > /tmp/pr.diff
-            cargo mutants --package vmb-core \
-              --timeout=120 --in-place \
-              --in-diff /tmp/pr.diff \
-              --baseline=skip --profile=mutants-bench
-          else
-            cargo mutants --package vmb-core \
-              --timeout=120 --in-place \
-              --baseline=skip --profile=mutants-bench
+          cargo mutants --package vmb-core \
+            --timeout=120 --in-place \
+            --baseline=skip --profile=mutants-bench \
+            --output target/mutants/vmb-core
+      - name: Assert 100% mutation score
+        if: always()
+        run: |
+          DIR=target/mutants/vmb-core/mutants.out
+          if [ ! -d "$DIR" ]; then
+            echo "::error::mutants output directory missing — sweep did not run"
+            exit 1
           fi
+          C=$(wc -l < "$DIR/caught.txt"  | tr -d ' ')
+          M=$(wc -l < "$DIR/missed.txt"  | tr -d ' ')
+          U=$(wc -l < "$DIR/unviable.txt" 2>/dev/null | tr -d ' ' || echo 0)
+          T=$(wc -l < "$DIR/timeout.txt"  2>/dev/null | tr -d ' ' || echo 0)
+          TESTABLE=$((C + M))
+          if [ "$TESTABLE" -eq 0 ]; then
+            echo "::error::no testable mutants found — config or filter regression"
+            exit 1
+          fi
+          SCORE=$(awk "BEGIN { printf \"%.1f\", $C * 100 / $TESTABLE }")
+          echo "vmb-core mutation score: $SCORE% (caught=$C missed=$M unviable=$U timeout=$T)"
+          if [ "$M" -ne 0 ] || [ "$T" -ne 0 ]; then
+            echo "::error::vmb-core mutation score must be 100% — got $SCORE% with $M missed and $T timed-out mutants"
+            echo ""
+            echo "Missed mutants:"
+            cat "$DIR/missed.txt" || true
+            echo ""
+            echo "Timed-out mutants:"
+            cat "$DIR/timeout.txt" 2>/dev/null || true
+            exit 1
+          fi
+          echo "::notice::vmb-core mutation score = 100.0% ($C caught, $U unviable)"
+      - name: Upload mutants output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-output-vmb-core
+          path: target/mutants/vmb-core/mutants.out/
+          if-no-files-found: ignore
