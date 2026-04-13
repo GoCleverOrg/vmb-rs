@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to (re)publish, e.g., 0.1.0. Skipped if already on crates.io.'
+        description: 'Version to (re)publish, e.g., 0.2.0. Skipped if already on crates.io.'
         required: true
-        default: '0.1.0'
+        default: '0.2.0'
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,55 +33,49 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Target version: $version"
 
-      - name: Check if vmb-sys already on crates.io
-        id: check-vmb-sys
-        run: |
-          current=$(curl -fsS -A "GoCleverOrg/vmb-rs release workflow (https://github.com/GoCleverOrg/vmb-rs)" "https://crates.io/api/v1/crates/vmb-sys" 2>/dev/null | jq -r '.crate.max_version // ""' || echo "")
-          target="${{ steps.version.outputs.version }}"
-          if [ "$current" = "$target" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::vmb-sys $target already on crates.io; skipping publish"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "Will publish vmb-sys $target (crates.io current: ${current:-none})"
-          fi
-
-      - name: Publish vmb-sys
-        if: steps.check-vmb-sys.outputs.skip != 'true'
+      # Publish every workspace member in dependency order. Each step is
+      # idempotent: if the target version is already on crates.io the
+      # publish is skipped. The 30s wait after each publish is crates.io's
+      # documented propagation window — subsequent crates in the chain
+      # pull from the registry and will otherwise fail with
+      # "no matching package named `vmb-core` found".
+      - name: Publish workspace crates
         env:
           CARGO_REGISTRY_TOKEN_RAW: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          # Defensive whitespace strip. The crates.io server rejects tokens
-          # containing any whitespace with a confusing "token format 401"
-          # error — observed once in v0.1.0 release when the secret was
-          # configured via `gh secret set --body -` (stdin may append a
-          # trailing newline). Stripping here is cheap insurance against
-          # recurrence.
+          set -euo pipefail
+
+          # Defensive whitespace strip (see commit 662e9eb — trailing
+          # newline in the secret value caused a confusing 401 error on
+          # the v0.1.0 release).
           token="${CARGO_REGISTRY_TOKEN_RAW//[[:space:]]/}"
           echo "Token length: raw=${#CARGO_REGISTRY_TOKEN_RAW} stripped=${#token}"
-          CARGO_REGISTRY_TOKEN="$token" cargo publish -p vmb-sys
 
-      - name: Wait for vmb-sys to become visible on crates.io
-        if: steps.check-vmb-sys.outputs.skip != 'true'
-        run: sleep 30
-
-      - name: Check if vmb already on crates.io
-        id: check-vmb
-        run: |
-          current=$(curl -fsS -A "GoCleverOrg/vmb-rs release workflow (https://github.com/GoCleverOrg/vmb-rs)" "https://crates.io/api/v1/crates/vmb" 2>/dev/null | jq -r '.crate.max_version // ""' || echo "")
           target="${{ steps.version.outputs.version }}"
-          if [ "$current" = "$target" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::vmb $target already on crates.io; skipping publish"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "Will publish vmb $target (crates.io current: ${current:-none})"
-          fi
+          UA="GoCleverOrg/vmb-rs release workflow (https://github.com/GoCleverOrg/vmb-rs)"
 
-      - name: Publish vmb
-        if: steps.check-vmb.outputs.skip != 'true'
-        env:
-          CARGO_REGISTRY_TOKEN_RAW: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          token="${CARGO_REGISTRY_TOKEN_RAW//[[:space:]]/}"
-          CARGO_REGISTRY_TOKEN="$token" cargo publish -p vmb
+          # Topological order:
+          #   vmb-sys     — leaf, raw FFI
+          #   vmb-core    — leaf, domain + port
+          #   vmb-ffi     — depends on vmb-core + vmb-sys
+          #   vmb-fake    — depends on vmb-core
+          #   vmb         — facade, depends on vmb-core + vmb-ffi
+          for crate in vmb-sys vmb-core vmb-ffi vmb-fake vmb; do
+            echo ""
+            echo "=== $crate ==="
+            current=$(curl -fsS -A "$UA" "https://crates.io/api/v1/crates/$crate" 2>/dev/null \
+              | jq -r '.crate.max_version // ""' || echo "")
+            if [ "$current" = "$target" ]; then
+              echo "::notice::$crate $target already on crates.io; skipping"
+              continue
+            fi
+            echo "Publishing $crate $target (crates.io current: ${current:-none})"
+            CARGO_REGISTRY_TOKEN="$token" cargo publish -p "$crate"
+            # Wait for crates.io to index before the next crate (which
+            # may depend on this one) tries to resolve it.
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          done
+
+          echo ""
+          echo "All workspace crates published."
