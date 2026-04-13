@@ -15,4 +15,9 @@ version.workspace = true
 thiserror = { workspace = true }
 
 [dev-dependencies]
-vmb-fake = { version = "0.2.0", path = "../vmb-fake" }
+# Path-only on purpose: a versioned dev-dep would force publish-time
+# resolution of `vmb-fake` from crates.io, but `vmb-fake` itself
+# depends on `vmb-core` — that's a cycle in the publish-time graph
+# that cargo cannot satisfy. Path-only dev-deps are stripped from the
+# packaged crate and only used for in-workspace `cargo test`.
+vmb-fake = { path = "../vmb-fake" }

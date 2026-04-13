@@ -23,4 +23,7 @@ vmb-core = { version = "0.2.0", path = "../vmb-core" }
 vmb-ffi = { version = "0.2.0", path = "../vmb-ffi", optional = true }
 
 [dev-dependencies]
-vmb-sys = { version = "0.2.0", path = "../vmb-sys" }
+# Path-only: only used by the `error_drift` integration test which
+# accesses bindgen types from vmb-sys for the cross-crate naming
+# audit. Versioned would force publish-order resolution unnecessarily.
+vmb-sys = { path = "../vmb-sys" }
