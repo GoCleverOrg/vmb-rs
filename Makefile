@@ -69,7 +69,19 @@ MUTANTS_TIMEOUT ?= 120
 # Per-crate output layout: $(MUTANTS_OUT)/<crate>/mutants.out/{caught,missed,...}.txt
 # Lives under target/ so it's already gitignored.
 MUTANTS_OUT := target/mutants
-CRATES      := vmb-core vmb-ffi vmb-fake vmb vmb-sys
+# Only `vmb-core` is under the mutation-coverage gate. The other four
+# crates are coverage-exempt by design:
+#   - vmb-sys:  bindgen-generated; bindings.rs already excluded via
+#               .cargo/mutants.toml.
+#   - vmb-ffi:  pure FFI adapter; killing its mutants requires hardware
+#               acceptance tests on a self-hosted runner with the
+#               Vimba X SDK installed.
+#   - vmb-fake: test infrastructure; implicitly verified by every
+#               assertion in vmb-core/tests/.
+#   - vmb:     facade re-exports + a one-line `real()` constructor.
+# To force a one-off sweep over a different crate, use:
+#   make rust-mutants-crate CRATE=vmb-fake
+CRATES      := vmb-core
 
 # Warm-path optimizations from the mira mutants-perf experiments.
 # See docs/mutants-perf-learnings.md in the mira repo for the 60-experiment
