@@ -20,5 +20,5 @@ sdk = ["vmb-sys/sdk"]
 
 [dependencies]
 tracing = { workspace = true }
-vmb-core = { version = "0.2.0", path = "../vmb-core" }
-vmb-sys = { version = "0.2.0", path = "../vmb-sys" }
+vmb-core = { version = "0.2.1", path = "../vmb-core" }
+vmb-sys = { version = "0.2.1", path = "../vmb-sys" }
