@@ -12,4 +12,4 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-vmb-core = { version = "0.2.0", path = "../vmb-core" }
+vmb-core = { version = "0.2.1", path = "../vmb-core" }

@@ -221,6 +221,53 @@ impl FakeVmbRuntime {
         self.state.config.lock().unwrap().payload_size = size;
     }
 
+    /// Pre-seed the fake with a camera in the "already open" state
+    /// **without** going through the [`VmbRuntime::open_camera`] code
+    /// path: no [`FakeCall`] is recorded, failure injection
+    /// ([`Self::fail_next`]) is **not** consulted, and no camera-list
+    /// or capture-lifecycle side effects are triggered.
+    ///
+    /// A fresh [`CameraHandle`] is allocated, bound to `id` in the
+    /// fake's internal camera map, and returned. After this call
+    /// [`Self::handle_for`] returns `Some(handle)` for `id`, and a
+    /// subsequent call to [`VmbRuntime::close_camera`] with the
+    /// returned handle will drop the binding exactly as for a
+    /// normally-opened camera.
+    ///
+    /// This is a scenario hook for consumer tests that need to drive
+    /// production code into the "camera already open" branch of its
+    /// own internal guards (e.g. `if state.cameras.contains_key(id)
+    /// { return Ok(()) }`) without first running the full open /
+    /// capture-setup sequence. The returned handle can be fed into
+    /// whatever seam the consumer exposes for pre-populating its own
+    /// bookkeeping.
+    ///
+    /// Calling this multiple times with the same `id` is allowed and
+    /// allocates a fresh handle each time; the most recent handle
+    /// wins for [`Self::handle_for`] lookups only if earlier handles
+    /// are dropped — both bindings coexist in the map otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use vmb_fake::FakeVmbRuntime;
+    ///
+    /// let fake = FakeVmbRuntime::new();
+    /// let handle = fake.pre_open_camera("cam-a");
+    /// assert_eq!(fake.handle_for("cam-a"), Some(handle));
+    /// // No OpenCamera call was recorded:
+    /// assert!(fake.calls().is_empty());
+    /// ```
+    pub fn pre_open_camera(&self, id: &str) -> CameraHandle {
+        let handle = CameraHandle::new(self.state.next_id());
+        self.state
+            .cameras
+            .lock()
+            .unwrap()
+            .insert(handle, id.to_string());
+        handle
+    }
+
     // --- Call log inspection ------------------------------------------
 
     /// Return a snapshot of every port-method call in order.

@@ -4,6 +4,23 @@ All notable changes to the `vmb-rs` workspace will be documented in this
 file. The format is based on [Keep a Changelog](https://keepachangelog.com),
 and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [0.2.1] — 2026-04-15
+
+Non-breaking patch release. **FakeVmbRuntime API extension; no
+breaking changes.** Existing consumers continue to compile and pass
+tests without source changes.
+
+### Added
+
+- `FakeVmbRuntime::pre_open_camera(id) -> CameraHandle` — scenario
+  hook that places the fake into the "camera already open" state
+  without running through the `VmbRuntime::open_camera` code path
+  (no `FakeCall` recorded, failure injection not consulted). Closes
+  an `open_and_start`-shaped guard gap identified in mira#112 so
+  consumer tests can drive both states of
+  `if state.cameras.contains_key(id) { return Ok(()) }` and detect
+  the `delete !` mutant.
+
 ## [0.2.0] — unreleased
 
 ### Changed — breaking

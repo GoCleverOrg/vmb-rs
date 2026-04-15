@@ -19,8 +19,8 @@ default = []
 sdk = ["dep:vmb-ffi", "vmb-ffi/sdk"]
 
 [dependencies]
-vmb-core = { version = "0.2.0", path = "../vmb-core" }
-vmb-ffi = { version = "0.2.0", path = "../vmb-ffi", optional = true }
+vmb-core = { version = "0.2.1", path = "../vmb-core" }
+vmb-ffi = { version = "0.2.1", path = "../vmb-ffi", optional = true }
 
 [dev-dependencies]
 # Path-only: only used by the `error_drift` integration test which
