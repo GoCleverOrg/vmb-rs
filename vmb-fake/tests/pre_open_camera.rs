@@ -38,7 +38,10 @@ fn proceeds_when_camera_not_yet_open() {
 
     let short_circuited = open_and_start_guarded(&fake, &mut state, "cam-a");
 
-    assert!(!short_circuited, "guard must not short-circuit on fresh state");
+    assert!(
+        !short_circuited,
+        "guard must not short-circuit on fresh state"
+    );
     assert_eq!(
         fake.calls(),
         vec![FakeCall::OpenCamera("cam-a".into())],
@@ -60,7 +63,10 @@ fn short_circuits_when_camera_already_open() {
 
     let short_circuited = open_and_start_guarded(&fake, &mut state, "cam-a");
 
-    assert!(short_circuited, "guard must short-circuit when already open");
+    assert!(
+        short_circuited,
+        "guard must short-circuit when already open"
+    );
     assert!(
         fake.calls().is_empty(),
         "no runtime calls expected on the short-circuit path, got {:?}",
