@@ -13,8 +13,7 @@
 #![allow(non_snake_case)]
 
 use std::env;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use thiserror::Error;
 
@@ -759,17 +758,16 @@ pub(crate) fn candidate_paths() -> Vec<String> {
 fn open_first(candidates: &[String]) -> Result<(String, libloading::Library), VmbLoadError> {
     let mut last_err: Option<(String, libloading::Error)> = None;
     for path in candidates {
-        match unsafe { libloading::Library::new(as_os(path)) } {
+        // SAFETY: `libloading::Library::new` is `unsafe` because it may
+        // execute initialiser code in the opened image; we accept that
+        // risk for `libVmbC`, whose initialiser is part of the API.
+        match unsafe { libloading::Library::new(path) } {
             Ok(lib) => return Ok((path.clone(), lib)),
             Err(e) => last_err = Some((path.clone(), e)),
         }
     }
     let (path, source) = last_err.expect("candidate_paths() never returns an empty Vec");
     Err(VmbLoadError::LibraryOpen { path, source })
-}
-
-fn as_os(s: &str) -> &OsStr {
-    Path::new(s).as_os_str()
 }
 
 #[cfg(test)]
@@ -960,7 +958,7 @@ mod tests {
     /// attempt to open a path we know does not exist; the returned
     /// error has variant-agnostic `Display`.
     fn fake_libloading_error() -> libloading::Error {
-        let bogus = Path::new("/__vmb_sys_nonexistent_lib__");
+        let bogus = std::path::Path::new("/__vmb_sys_nonexistent_lib__");
         unsafe { libloading::Library::new(bogus) }.expect_err("must fail for nonexistent path")
     }
 
