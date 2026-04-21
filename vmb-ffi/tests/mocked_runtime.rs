@@ -325,22 +325,22 @@ unsafe extern "C" fn spy_invalidation_unregister(
 /// of the runtime; dropping it tears down the mock.
 fn make_api() -> Arc<VmbApi> {
     let mut api = VmbApi::stub();
-    api.VmbStartup = spy_startup;
-    api.VmbShutdown = spy_shutdown;
-    api.VmbCamerasList = spy_cameras_list;
-    api.VmbCameraOpen = spy_camera_open;
-    api.VmbCameraClose = spy_camera_close;
-    api.VmbSettingsLoad = spy_settings_load;
-    api.VmbFeatureCommandRun = spy_feature_command_run;
-    api.VmbPayloadSizeGet = spy_payload_size;
-    api.VmbFrameAnnounce = spy_frame_announce;
-    api.VmbFrameRevokeAll = spy_frame_revoke_all;
-    api.VmbCaptureStart = spy_capture_start;
-    api.VmbCaptureEnd = spy_capture_end;
-    api.VmbCaptureQueueFlush = spy_capture_queue_flush;
-    api.VmbCaptureFrameQueue = spy_capture_frame_queue;
-    api.VmbFeatureInvalidationRegister = spy_invalidation_register;
-    api.VmbFeatureInvalidationUnregister = spy_invalidation_unregister;
+    api.set_VmbStartup(spy_startup);
+    api.set_VmbShutdown(spy_shutdown);
+    api.set_VmbCamerasList(spy_cameras_list);
+    api.set_VmbCameraOpen(spy_camera_open);
+    api.set_VmbCameraClose(spy_camera_close);
+    api.set_VmbSettingsLoad(spy_settings_load);
+    api.set_VmbFeatureCommandRun(spy_feature_command_run);
+    api.set_VmbPayloadSizeGet(spy_payload_size);
+    api.set_VmbFrameAnnounce(spy_frame_announce);
+    api.set_VmbFrameRevokeAll(spy_frame_revoke_all);
+    api.set_VmbCaptureStart(spy_capture_start);
+    api.set_VmbCaptureEnd(spy_capture_end);
+    api.set_VmbCaptureQueueFlush(spy_capture_queue_flush);
+    api.set_VmbCaptureFrameQueue(spy_capture_frame_queue);
+    api.set_VmbFeatureInvalidationRegister(spy_invalidation_register);
+    api.set_VmbFeatureInvalidationUnregister(spy_invalidation_unregister);
     Arc::new(api)
 }
 
@@ -683,12 +683,8 @@ fn frame_revoke_all_invokes_sdk() {
 
 /// A successful discovery registration + unregistration drives both
 /// SDK entry points and reclaims the trampoline context without
-/// leaking. Catches:
-/// - "replace unregister_discovery with ()" (would skip the SDK call),
-/// - "replace != with == in unregister_discovery" (would swap the warn
-///   branch direction),
-/// - "delete ! in unregister_discovery" (would skip the Box reclaim on
-///   non-null ctx_ptr).
+/// leaking. Catches "replace unregister_discovery with ()" (which
+/// would skip both the SDK call and the `Box::from_raw` drop).
 #[test]
 fn discovery_register_and_unregister_invoke_sdk() {
     let (_g, rt) = setup();

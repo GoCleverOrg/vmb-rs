@@ -15,3 +15,13 @@ exclude_globs = [
     "vmb-sys/src/bindings.rs",
     "vmb-sys/src/stubs.rs",
 ]
+
+# `impl Drop for VmbApi` deliberately leaks the loaded `libloading::Library`
+# via `std::mem::forget`. The mutation "replace drop body with ()" would
+# remove the leak — which is the bug we are defending against — but that
+# bug is only observable if a Vimba X transport-layer thread survives
+# `VmbShutdown` and then tries to execute code in `libVmbC` after
+# `dlclose`. We have no way to simulate this in unit tests without a real
+# SDK install, so the mutant is unreachable by the test harness by
+# design.
+exclude_re = ["impl Drop for VmbApi"]

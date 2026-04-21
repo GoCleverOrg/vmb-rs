@@ -51,56 +51,73 @@ pub enum VmbLoadError {
 /// Runtime-loaded Vimba X C API handle.
 ///
 /// Holds the open library plus one function pointer per VmbC entry point.
-/// Function-pointer fields are `pub` so adapters can invoke them with the
-/// usual `(api.VmbXxx)(args)` syntax. Test-only construction without a
-/// real library is available via [`Self::stub`].
+/// Function-pointer fields are `pub(crate)`; external callers access
+/// them via method getters (`api.VmbXxx()` returns the function pointer)
+/// and — for test mocking — setters (`api.set_VmbXxx(fn_ptr)`). This
+/// keeps the struct layout a vmb-sys implementation detail so future
+/// VmbC ABI changes don't break dependent crates' compilation.
+///
+/// Test-only construction of a no-op baseline is available via
+/// [`Self::stub`]; use it with the `set_*` setters to plug in spy
+/// function pointers.
 pub struct VmbApi {
     /// Keeps the loaded library alive so function pointers remain valid.
     /// `None` for test instances built from raw function pointers.
+    ///
+    /// `Drop for VmbApi` deliberately leaks the `Library` on drop rather
+    /// than calling `dlclose` — once Vimba X has been started, transport
+    /// layer `.cti` plugins it `dlopen`s internally may spawn threads
+    /// whose lifetime is not fully bounded by `VmbShutdown`. Unloading
+    /// `libVmbC` while any such thread is still running would segfault.
+    /// The previous build-time-linked architecture never unloaded the
+    /// library either; preserving that invariant is cheap (one library
+    /// worth of RAM leaked at process teardown) and matches the SDK's
+    /// expectations.
     _lib: Option<libloading::Library>,
 
-    pub VmbVersionQuery: unsafe extern "C" fn(
+    pub(crate) VmbVersionQuery: unsafe extern "C" fn(
         versionInfo: *mut VmbVersionInfo_t,
         sizeofVersionInfo: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbStartup: unsafe extern "C" fn(pathConfiguration: *const VmbFilePathChar_t) -> VmbError_t,
-    pub VmbShutdown: unsafe extern "C" fn(),
-    pub VmbCamerasList: unsafe extern "C" fn(
+    pub(crate) VmbStartup:
+        unsafe extern "C" fn(pathConfiguration: *const VmbFilePathChar_t) -> VmbError_t,
+    pub(crate) VmbShutdown: unsafe extern "C" fn(),
+    pub(crate) VmbCamerasList: unsafe extern "C" fn(
         cameraInfo: *mut VmbCameraInfo_t,
         listLength: VmbUint32_t,
         numFound: *mut VmbUint32_t,
         sizeofCameraInfo: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbCameraInfoQueryByHandle: unsafe extern "C" fn(
+    pub(crate) VmbCameraInfoQueryByHandle: unsafe extern "C" fn(
         cameraHandle: VmbHandle_t,
         info: *mut VmbCameraInfo_t,
         sizeofCameraInfo: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbCameraInfoQuery: unsafe extern "C" fn(
+    pub(crate) VmbCameraInfoQuery: unsafe extern "C" fn(
         idString: *const ::std::os::raw::c_char,
         info: *mut VmbCameraInfo_t,
         sizeofCameraInfo: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbCameraOpen: unsafe extern "C" fn(
+    pub(crate) VmbCameraOpen: unsafe extern "C" fn(
         idString: *const ::std::os::raw::c_char,
         accessMode: VmbAccessMode_t,
         cameraHandle: *mut VmbHandle_t,
     ) -> VmbError_t,
-    pub VmbCameraClose: unsafe extern "C" fn(cameraHandle: VmbHandle_t) -> VmbError_t,
-    pub VmbFeaturesList: unsafe extern "C" fn(
+    pub(crate) VmbCameraClose: unsafe extern "C" fn(cameraHandle: VmbHandle_t) -> VmbError_t,
+    pub(crate) VmbFeaturesList: unsafe extern "C" fn(
         handle: VmbHandle_t,
         featureInfoList: *mut VmbFeatureInfo_t,
         listLength: VmbUint32_t,
         numFound: *mut VmbUint32_t,
         sizeofFeatureInfo: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureInfoQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureInfoQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         featureInfo: *mut VmbFeatureInfo_t,
         sizeofFeatureInfo: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureListSelected: unsafe extern "C" fn(
+    pub(crate) VmbFeatureListSelected: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         featureInfoList: *mut VmbFeatureInfo_t,
@@ -108,231 +125,231 @@ pub struct VmbApi {
         numFound: *mut VmbUint32_t,
         sizeofFeatureInfo: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureAccessQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureAccessQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         isReadable: *mut VmbBool_t,
         isWriteable: *mut VmbBool_t,
     ) -> VmbError_t,
-    pub VmbFeatureIntGet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureIntGet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: *mut VmbInt64_t,
     ) -> VmbError_t,
-    pub VmbFeatureIntSet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureIntSet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: VmbInt64_t,
     ) -> VmbError_t,
-    pub VmbFeatureIntRangeQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureIntRangeQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         min: *mut VmbInt64_t,
         max: *mut VmbInt64_t,
     ) -> VmbError_t,
-    pub VmbFeatureIntIncrementQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureIntIncrementQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: *mut VmbInt64_t,
     ) -> VmbError_t,
-    pub VmbFeatureIntValidValueSetQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureIntValidValueSetQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         buffer: *mut VmbInt64_t,
         bufferSize: VmbUint32_t,
         setSize: *mut VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureFloatGet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureFloatGet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: *mut f64,
     ) -> VmbError_t,
-    pub VmbFeatureFloatSet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureFloatSet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: f64,
     ) -> VmbError_t,
-    pub VmbFeatureFloatRangeQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureFloatRangeQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         min: *mut f64,
         max: *mut f64,
     ) -> VmbError_t,
-    pub VmbFeatureFloatIncrementQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureFloatIncrementQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         hasIncrement: *mut VmbBool_t,
         value: *mut f64,
     ) -> VmbError_t,
-    pub VmbFeatureEnumGet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureEnumGet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: *mut *const ::std::os::raw::c_char,
     ) -> VmbError_t,
-    pub VmbFeatureEnumSet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureEnumSet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: *const ::std::os::raw::c_char,
     ) -> VmbError_t,
-    pub VmbFeatureEnumRangeQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureEnumRangeQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         nameArray: *mut *const ::std::os::raw::c_char,
         arrayLength: VmbUint32_t,
         numFound: *mut VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureEnumIsAvailable: unsafe extern "C" fn(
+    pub(crate) VmbFeatureEnumIsAvailable: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: *const ::std::os::raw::c_char,
         isAvailable: *mut VmbBool_t,
     ) -> VmbError_t,
-    pub VmbFeatureEnumAsInt: unsafe extern "C" fn(
+    pub(crate) VmbFeatureEnumAsInt: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: *const ::std::os::raw::c_char,
         intVal: *mut VmbInt64_t,
     ) -> VmbError_t,
-    pub VmbFeatureEnumAsString: unsafe extern "C" fn(
+    pub(crate) VmbFeatureEnumAsString: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         intValue: VmbInt64_t,
         stringValue: *mut *const ::std::os::raw::c_char,
     ) -> VmbError_t,
-    pub VmbFeatureEnumEntryGet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureEnumEntryGet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         featureName: *const ::std::os::raw::c_char,
         entryName: *const ::std::os::raw::c_char,
         featureEnumEntry: *mut VmbFeatureEnumEntry_t,
         sizeofFeatureEnumEntry: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureStringGet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureStringGet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         buffer: *mut ::std::os::raw::c_char,
         bufferSize: VmbUint32_t,
         sizeFilled: *mut VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureStringSet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureStringSet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: *const ::std::os::raw::c_char,
     ) -> VmbError_t,
-    pub VmbFeatureStringMaxlengthQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureStringMaxlengthQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         maxLength: *mut VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureBoolGet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureBoolGet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: *mut VmbBool_t,
     ) -> VmbError_t,
-    pub VmbFeatureBoolSet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureBoolSet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         value: VmbBool_t,
     ) -> VmbError_t,
-    pub VmbFeatureCommandRun: unsafe extern "C" fn(
+    pub(crate) VmbFeatureCommandRun: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
     ) -> VmbError_t,
-    pub VmbFeatureCommandIsDone: unsafe extern "C" fn(
+    pub(crate) VmbFeatureCommandIsDone: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         isDone: *mut VmbBool_t,
     ) -> VmbError_t,
-    pub VmbFeatureRawGet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureRawGet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         buffer: *mut ::std::os::raw::c_char,
         bufferSize: VmbUint32_t,
         sizeFilled: *mut VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureRawSet: unsafe extern "C" fn(
+    pub(crate) VmbFeatureRawSet: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         buffer: *const ::std::os::raw::c_char,
         bufferSize: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureRawLengthQuery: unsafe extern "C" fn(
+    pub(crate) VmbFeatureRawLengthQuery: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         length: *mut VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFeatureInvalidationRegister: unsafe extern "C" fn(
+    pub(crate) VmbFeatureInvalidationRegister: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         callback: VmbInvalidationCallback,
         userContext: *mut ::std::os::raw::c_void,
     ) -> VmbError_t,
-    pub VmbFeatureInvalidationUnregister: unsafe extern "C" fn(
+    pub(crate) VmbFeatureInvalidationUnregister: unsafe extern "C" fn(
         handle: VmbHandle_t,
         name: *const ::std::os::raw::c_char,
         callback: VmbInvalidationCallback,
     ) -> VmbError_t,
-    pub VmbPayloadSizeGet:
+    pub(crate) VmbPayloadSizeGet:
         unsafe extern "C" fn(handle: VmbHandle_t, payloadSize: *mut VmbUint32_t) -> VmbError_t,
-    pub VmbFrameAnnounce: unsafe extern "C" fn(
+    pub(crate) VmbFrameAnnounce: unsafe extern "C" fn(
         handle: VmbHandle_t,
         frame: *const VmbFrame_t,
         sizeofFrame: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbFrameRevoke:
+    pub(crate) VmbFrameRevoke:
         unsafe extern "C" fn(handle: VmbHandle_t, frame: *const VmbFrame_t) -> VmbError_t,
-    pub VmbFrameRevokeAll: unsafe extern "C" fn(handle: VmbHandle_t) -> VmbError_t,
-    pub VmbCaptureStart: unsafe extern "C" fn(handle: VmbHandle_t) -> VmbError_t,
-    pub VmbCaptureEnd: unsafe extern "C" fn(handle: VmbHandle_t) -> VmbError_t,
-    pub VmbCaptureFrameQueue: unsafe extern "C" fn(
+    pub(crate) VmbFrameRevokeAll: unsafe extern "C" fn(handle: VmbHandle_t) -> VmbError_t,
+    pub(crate) VmbCaptureStart: unsafe extern "C" fn(handle: VmbHandle_t) -> VmbError_t,
+    pub(crate) VmbCaptureEnd: unsafe extern "C" fn(handle: VmbHandle_t) -> VmbError_t,
+    pub(crate) VmbCaptureFrameQueue: unsafe extern "C" fn(
         handle: VmbHandle_t,
         frame: *const VmbFrame_t,
         callback: VmbFrameCallback,
     ) -> VmbError_t,
-    pub VmbCaptureFrameWait: unsafe extern "C" fn(
+    pub(crate) VmbCaptureFrameWait: unsafe extern "C" fn(
         handle: VmbHandle_t,
         frame: *const VmbFrame_t,
         timeout: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbCaptureQueueFlush: unsafe extern "C" fn(handle: VmbHandle_t) -> VmbError_t,
-    pub VmbTransportLayersList: unsafe extern "C" fn(
+    pub(crate) VmbCaptureQueueFlush: unsafe extern "C" fn(handle: VmbHandle_t) -> VmbError_t,
+    pub(crate) VmbTransportLayersList: unsafe extern "C" fn(
         transportLayerInfo: *mut VmbTransportLayerInfo_t,
         listLength: VmbUint32_t,
         numFound: *mut VmbUint32_t,
         sizeofTransportLayerInfo: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbInterfacesList: unsafe extern "C" fn(
+    pub(crate) VmbInterfacesList: unsafe extern "C" fn(
         interfaceInfo: *mut VmbInterfaceInfo_t,
         listLength: VmbUint32_t,
         numFound: *mut VmbUint32_t,
         sizeofInterfaceInfo: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbMemoryRead: unsafe extern "C" fn(
+    pub(crate) VmbMemoryRead: unsafe extern "C" fn(
         handle: VmbHandle_t,
         address: VmbUint64_t,
         bufferSize: VmbUint32_t,
         dataBuffer: *mut ::std::os::raw::c_char,
         sizeComplete: *mut VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbMemoryWrite: unsafe extern "C" fn(
+    pub(crate) VmbMemoryWrite: unsafe extern "C" fn(
         handle: VmbHandle_t,
         address: VmbUint64_t,
         bufferSize: VmbUint32_t,
         dataBuffer: *const ::std::os::raw::c_char,
         sizeComplete: *mut VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbSettingsSave: unsafe extern "C" fn(
+    pub(crate) VmbSettingsSave: unsafe extern "C" fn(
         handle: VmbHandle_t,
         filePath: *const VmbFilePathChar_t,
         settings: *const VmbFeaturePersistSettings_t,
         sizeofSettings: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbSettingsLoad: unsafe extern "C" fn(
+    pub(crate) VmbSettingsLoad: unsafe extern "C" fn(
         handle: VmbHandle_t,
         filePath: *const VmbFilePathChar_t,
         settings: *const VmbFeaturePersistSettings_t,
         sizeofSettings: VmbUint32_t,
     ) -> VmbError_t,
-    pub VmbChunkDataAccess: unsafe extern "C" fn(
+    pub(crate) VmbChunkDataAccess: unsafe extern "C" fn(
         frame: *const VmbFrame_t,
         chunkAccessCallback: VmbChunkAccessCallback,
         userContext: *mut ::std::os::raw::c_void,
@@ -521,6 +538,156 @@ impl VmbApi {
             VmbSettingsSave: stubs::settings_save,
             VmbSettingsLoad: stubs::settings_load,
             VmbChunkDataAccess: stubs::chunk_data_access,
+        }
+    }
+}
+
+/// Generate a getter + setter pair for every `pub(crate)` fn-pointer
+/// field on `VmbApi`. The setter is `#[doc(hidden)]` — it exists so
+/// test code can plug in spy function pointers, not as a supported
+/// runtime mutation hook.
+macro_rules! vmb_api_accessors {
+    ( $( $name:ident : $setter:ident : $fty:ty , )* ) => {
+        impl VmbApi {
+            $(
+                #[inline]
+                #[allow(non_snake_case)]
+                pub fn $name(&self) -> $fty { self.$name }
+
+                #[doc(hidden)]
+                #[inline]
+                #[allow(non_snake_case)]
+                pub fn $setter(&mut self, f: $fty) { self.$name = f; }
+            )*
+        }
+    };
+}
+
+vmb_api_accessors! {
+    VmbVersionQuery : set_VmbVersionQuery :
+        unsafe extern "C" fn(*mut VmbVersionInfo_t, VmbUint32_t) -> VmbError_t,
+    VmbStartup : set_VmbStartup :
+        unsafe extern "C" fn(*const VmbFilePathChar_t) -> VmbError_t,
+    VmbShutdown : set_VmbShutdown : unsafe extern "C" fn(),
+    VmbCamerasList : set_VmbCamerasList :
+        unsafe extern "C" fn(*mut VmbCameraInfo_t, VmbUint32_t, *mut VmbUint32_t, VmbUint32_t) -> VmbError_t,
+    VmbCameraInfoQueryByHandle : set_VmbCameraInfoQueryByHandle :
+        unsafe extern "C" fn(VmbHandle_t, *mut VmbCameraInfo_t, VmbUint32_t) -> VmbError_t,
+    VmbCameraInfoQuery : set_VmbCameraInfoQuery :
+        unsafe extern "C" fn(*const ::std::os::raw::c_char, *mut VmbCameraInfo_t, VmbUint32_t) -> VmbError_t,
+    VmbCameraOpen : set_VmbCameraOpen :
+        unsafe extern "C" fn(*const ::std::os::raw::c_char, VmbAccessMode_t, *mut VmbHandle_t) -> VmbError_t,
+    VmbCameraClose : set_VmbCameraClose :
+        unsafe extern "C" fn(VmbHandle_t) -> VmbError_t,
+    VmbFeaturesList : set_VmbFeaturesList :
+        unsafe extern "C" fn(VmbHandle_t, *mut VmbFeatureInfo_t, VmbUint32_t, *mut VmbUint32_t, VmbUint32_t) -> VmbError_t,
+    VmbFeatureInfoQuery : set_VmbFeatureInfoQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbFeatureInfo_t, VmbUint32_t) -> VmbError_t,
+    VmbFeatureListSelected : set_VmbFeatureListSelected :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbFeatureInfo_t, VmbUint32_t, *mut VmbUint32_t, VmbUint32_t) -> VmbError_t,
+    VmbFeatureAccessQuery : set_VmbFeatureAccessQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbBool_t, *mut VmbBool_t) -> VmbError_t,
+    VmbFeatureIntGet : set_VmbFeatureIntGet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbInt64_t) -> VmbError_t,
+    VmbFeatureIntSet : set_VmbFeatureIntSet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, VmbInt64_t) -> VmbError_t,
+    VmbFeatureIntRangeQuery : set_VmbFeatureIntRangeQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbInt64_t, *mut VmbInt64_t) -> VmbError_t,
+    VmbFeatureIntIncrementQuery : set_VmbFeatureIntIncrementQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbInt64_t) -> VmbError_t,
+    VmbFeatureIntValidValueSetQuery : set_VmbFeatureIntValidValueSetQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbInt64_t, VmbUint32_t, *mut VmbUint32_t) -> VmbError_t,
+    VmbFeatureFloatGet : set_VmbFeatureFloatGet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut f64) -> VmbError_t,
+    VmbFeatureFloatSet : set_VmbFeatureFloatSet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, f64) -> VmbError_t,
+    VmbFeatureFloatRangeQuery : set_VmbFeatureFloatRangeQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut f64, *mut f64) -> VmbError_t,
+    VmbFeatureFloatIncrementQuery : set_VmbFeatureFloatIncrementQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbBool_t, *mut f64) -> VmbError_t,
+    VmbFeatureEnumGet : set_VmbFeatureEnumGet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut *const ::std::os::raw::c_char) -> VmbError_t,
+    VmbFeatureEnumSet : set_VmbFeatureEnumSet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *const ::std::os::raw::c_char) -> VmbError_t,
+    VmbFeatureEnumRangeQuery : set_VmbFeatureEnumRangeQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut *const ::std::os::raw::c_char, VmbUint32_t, *mut VmbUint32_t) -> VmbError_t,
+    VmbFeatureEnumIsAvailable : set_VmbFeatureEnumIsAvailable :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *const ::std::os::raw::c_char, *mut VmbBool_t) -> VmbError_t,
+    VmbFeatureEnumAsInt : set_VmbFeatureEnumAsInt :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *const ::std::os::raw::c_char, *mut VmbInt64_t) -> VmbError_t,
+    VmbFeatureEnumAsString : set_VmbFeatureEnumAsString :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, VmbInt64_t, *mut *const ::std::os::raw::c_char) -> VmbError_t,
+    VmbFeatureEnumEntryGet : set_VmbFeatureEnumEntryGet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *const ::std::os::raw::c_char, *mut VmbFeatureEnumEntry_t, VmbUint32_t) -> VmbError_t,
+    VmbFeatureStringGet : set_VmbFeatureStringGet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut ::std::os::raw::c_char, VmbUint32_t, *mut VmbUint32_t) -> VmbError_t,
+    VmbFeatureStringSet : set_VmbFeatureStringSet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *const ::std::os::raw::c_char) -> VmbError_t,
+    VmbFeatureStringMaxlengthQuery : set_VmbFeatureStringMaxlengthQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbUint32_t) -> VmbError_t,
+    VmbFeatureBoolGet : set_VmbFeatureBoolGet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbBool_t) -> VmbError_t,
+    VmbFeatureBoolSet : set_VmbFeatureBoolSet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, VmbBool_t) -> VmbError_t,
+    VmbFeatureCommandRun : set_VmbFeatureCommandRun :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char) -> VmbError_t,
+    VmbFeatureCommandIsDone : set_VmbFeatureCommandIsDone :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbBool_t) -> VmbError_t,
+    VmbFeatureRawGet : set_VmbFeatureRawGet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut ::std::os::raw::c_char, VmbUint32_t, *mut VmbUint32_t) -> VmbError_t,
+    VmbFeatureRawSet : set_VmbFeatureRawSet :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *const ::std::os::raw::c_char, VmbUint32_t) -> VmbError_t,
+    VmbFeatureRawLengthQuery : set_VmbFeatureRawLengthQuery :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, *mut VmbUint32_t) -> VmbError_t,
+    VmbFeatureInvalidationRegister : set_VmbFeatureInvalidationRegister :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, VmbInvalidationCallback, *mut ::std::os::raw::c_void) -> VmbError_t,
+    VmbFeatureInvalidationUnregister : set_VmbFeatureInvalidationUnregister :
+        unsafe extern "C" fn(VmbHandle_t, *const ::std::os::raw::c_char, VmbInvalidationCallback) -> VmbError_t,
+    VmbPayloadSizeGet : set_VmbPayloadSizeGet :
+        unsafe extern "C" fn(VmbHandle_t, *mut VmbUint32_t) -> VmbError_t,
+    VmbFrameAnnounce : set_VmbFrameAnnounce :
+        unsafe extern "C" fn(VmbHandle_t, *const VmbFrame_t, VmbUint32_t) -> VmbError_t,
+    VmbFrameRevoke : set_VmbFrameRevoke :
+        unsafe extern "C" fn(VmbHandle_t, *const VmbFrame_t) -> VmbError_t,
+    VmbFrameRevokeAll : set_VmbFrameRevokeAll :
+        unsafe extern "C" fn(VmbHandle_t) -> VmbError_t,
+    VmbCaptureStart : set_VmbCaptureStart :
+        unsafe extern "C" fn(VmbHandle_t) -> VmbError_t,
+    VmbCaptureEnd : set_VmbCaptureEnd :
+        unsafe extern "C" fn(VmbHandle_t) -> VmbError_t,
+    VmbCaptureFrameQueue : set_VmbCaptureFrameQueue :
+        unsafe extern "C" fn(VmbHandle_t, *const VmbFrame_t, VmbFrameCallback) -> VmbError_t,
+    VmbCaptureFrameWait : set_VmbCaptureFrameWait :
+        unsafe extern "C" fn(VmbHandle_t, *const VmbFrame_t, VmbUint32_t) -> VmbError_t,
+    VmbCaptureQueueFlush : set_VmbCaptureQueueFlush :
+        unsafe extern "C" fn(VmbHandle_t) -> VmbError_t,
+    VmbTransportLayersList : set_VmbTransportLayersList :
+        unsafe extern "C" fn(*mut VmbTransportLayerInfo_t, VmbUint32_t, *mut VmbUint32_t, VmbUint32_t) -> VmbError_t,
+    VmbInterfacesList : set_VmbInterfacesList :
+        unsafe extern "C" fn(*mut VmbInterfaceInfo_t, VmbUint32_t, *mut VmbUint32_t, VmbUint32_t) -> VmbError_t,
+    VmbMemoryRead : set_VmbMemoryRead :
+        unsafe extern "C" fn(VmbHandle_t, VmbUint64_t, VmbUint32_t, *mut ::std::os::raw::c_char, *mut VmbUint32_t) -> VmbError_t,
+    VmbMemoryWrite : set_VmbMemoryWrite :
+        unsafe extern "C" fn(VmbHandle_t, VmbUint64_t, VmbUint32_t, *const ::std::os::raw::c_char, *mut VmbUint32_t) -> VmbError_t,
+    VmbSettingsSave : set_VmbSettingsSave :
+        unsafe extern "C" fn(VmbHandle_t, *const VmbFilePathChar_t, *const VmbFeaturePersistSettings_t, VmbUint32_t) -> VmbError_t,
+    VmbSettingsLoad : set_VmbSettingsLoad :
+        unsafe extern "C" fn(VmbHandle_t, *const VmbFilePathChar_t, *const VmbFeaturePersistSettings_t, VmbUint32_t) -> VmbError_t,
+    VmbChunkDataAccess : set_VmbChunkDataAccess :
+        unsafe extern "C" fn(*const VmbFrame_t, VmbChunkAccessCallback, *mut ::std::os::raw::c_void) -> VmbError_t,
+}
+
+impl Drop for VmbApi {
+    /// Leak the loaded `libloading::Library` on drop.
+    ///
+    /// See the `_lib` field doc for the full rationale. Production
+    /// callers hit this only at process teardown (there's normally a
+    /// single long-lived `Arc<VmbApi>` held by `VmbFfiRuntime`); test
+    /// instances constructed via [`VmbApi::stub`] have `_lib = None`
+    /// and nothing is leaked.
+    fn drop(&mut self) {
+        if let Some(lib) = self._lib.take() {
+            std::mem::forget(lib);
         }
     }
 }

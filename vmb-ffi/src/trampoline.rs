@@ -182,7 +182,7 @@ pub(crate) unsafe extern "C" fn frame_callback_trampoline(
         // runtime-loaded VmbC function pointer stays live for the
         // lifetime of `ctx.api`.
         unsafe {
-            let _ = (ctx.api.VmbCaptureFrameQueue)(
+            let _ = (ctx.api.VmbCaptureFrameQueue())(
                 camera_handle,
                 frame_ptr as *const _,
                 Some(frame_callback_trampoline),
@@ -274,7 +274,7 @@ unsafe fn read_string_feature(
     // SAFETY: `c_name` lives until the end of the call; `buf` is valid
     // for `buf.len()` bytes; `filled` is a valid out-parameter.
     let rc = unsafe {
-        (api.VmbFeatureStringGet)(
+        (api.VmbFeatureStringGet())(
             handle,
             c_name.as_ptr(),
             buf.as_mut_ptr() as *mut std::os::raw::c_char,
@@ -305,7 +305,7 @@ unsafe fn read_enum_feature(
     let mut value_ptr: *const std::os::raw::c_char = std::ptr::null();
     // SAFETY: `c_name` lives until the end of the call; `value_ptr` is
     // a valid out-parameter.
-    let rc = unsafe { (api.VmbFeatureEnumGet)(handle, c_name.as_ptr(), &mut value_ptr) };
+    let rc = unsafe { (api.VmbFeatureEnumGet())(handle, c_name.as_ptr(), &mut value_ptr) };
     if rc != 0 || value_ptr.is_null() {
         return None;
     }
