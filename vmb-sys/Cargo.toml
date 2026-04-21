@@ -6,16 +6,11 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Raw FFI bindings to Allied Vision VmbC (Vimba X) C API"
+description = "Raw FFI bindings to Allied Vision VmbC (Vimba X) C API, loaded at runtime via libloading"
 readme = "README.md"
 keywords = ["vimba", "allied-vision", "camera", "ffi", "bindgen"]
 categories = ["external-ffi-bindings", "api-bindings", "hardware-support"]
-links = "VmbC"
 
-[features]
-default = []
-# Enables SDK discovery + linking. Requires VIMBA_X_HOME env var on Linux
-# or /Library/Frameworks/VmbC.framework on macOS. Without this feature the
-# crate compiles to a stub rlib (extern declarations only, no linking),
-# allowing `cargo build --workspace` to succeed without the SDK.
-sdk = []
+[dependencies]
+libloading = "0.9"
+thiserror = { workspace = true }

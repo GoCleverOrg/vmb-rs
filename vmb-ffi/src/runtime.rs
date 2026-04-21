@@ -1,11 +1,8 @@
 //! [`VmbFfiRuntime`] — production [`VmbRuntime`] implementation backed
-//! by the Vimba X C API.
+//! by the Vimba X C API, loaded at runtime via `vmb_sys::VmbApi`.
 //!
-//! Every `unsafe { vmb_sys::... }` call in the workspace lives in one of
-//! the methods below (or in [`crate::trampoline`]). The mapping is
-//! deliberately verbatim w.r.t. the pre-refactor monolithic
-//! `vmb/src/{system,camera,discovery}.rs`, so the behaviour is
-//! unchanged.
+//! Every `unsafe { (api.Vmb...) }` call in the workspace lives in one of
+//! the methods below (or in [`crate::trampoline`]).
 
 use std::ffi::CString;
 use std::mem;
@@ -14,12 +11,13 @@ use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use vmb_core::{
     check, error::VmbError, port::VmbRuntime, CameraHandle, CameraInfo, DiscoveryCallback,
     DiscoveryCallbackId, DiscoveryRegistrationHandle, FrameCallback, FrameCallbackId, FrameSlotId,
     Result,
 };
+use vmb_sys::VmbApi;
 
 use crate::state::{DiscoveryRegState, FfiState, RawCamera, STARTED};
 use crate::trampoline::{
@@ -28,28 +26,50 @@ use crate::trampoline::{
 };
 use crate::util::cstr_to_owned;
 
-/// Production [`VmbRuntime`] adapter that links against `libVmbC`.
+/// Production [`VmbRuntime`] adapter that loads `libVmbC` at runtime.
 ///
 /// Cheap to clone (the internal state is `Arc`-shared); pass by value to
 /// generic code, clone where multiple owners are needed.
+///
+/// # Process-singleton invariant
+///
+/// The underlying Vimba X C API is a process-wide singleton: a single
+/// global `STARTED` flag inside this crate pairs with a single
+/// `VmbStartup` / `VmbShutdown` per process. Cloning a `VmbFfiRuntime`
+/// (or the `Arc` it wraps) is fine — clones share the same internal
+/// state and the same loaded library. **Constructing multiple
+/// independent `VmbFfiRuntime` instances in the same process is a
+/// misuse.** The second `startup()` will be correctly rejected with
+/// [`VmbError::AlreadyStarted`], but the per-instance camera / frame /
+/// discovery maps are separate and not synchronised. Tests that
+/// construct multiple runtimes via [`Self::with_api`] should either
+/// serialise construction or reset the global `STARTED` between
+/// instances.
 #[derive(Clone)]
 pub struct VmbFfiRuntime {
     state: Arc<FfiState>,
 }
 
-impl Default for VmbFfiRuntime {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl VmbFfiRuntime {
-    /// Create a fresh runtime. Construction does NOT start the SDK —
-    /// call [`VmbRuntime::startup`] (typically via
+    /// Load the Vimba X shared library and construct a runtime bound to
+    /// it. Construction does NOT start the SDK — call
+    /// [`VmbRuntime::startup`] (typically via
     /// `vmb_core::VmbSystem::startup`) for that.
-    pub fn new() -> Self {
+    ///
+    /// Returns [`VmbError::LoadFailed`] if `libVmbC` is not installed on
+    /// the host, or one of its required symbols is missing.
+    pub fn new() -> Result<Self> {
+        let api = VmbApi::load().map_err(|e| VmbError::LoadFailed {
+            message: e.to_string(),
+        })?;
+        Ok(Self::with_api(Arc::new(api)))
+    }
+
+    /// Construct a runtime around a caller-provided `VmbApi`. Intended
+    /// for test code that wants to inject spy / mock function pointers.
+    pub fn with_api(api: Arc<VmbApi>) -> Self {
         Self {
-            state: FfiState::new(),
+            state: FfiState::new(api),
         }
     }
 }
@@ -66,7 +86,7 @@ impl VmbRuntime for VmbFfiRuntime {
         }
         // SAFETY: `VmbStartup` accepts a null `pathConfiguration` to pick
         // up the default GENICAM_GENTL*_PATH environment variables.
-        let rc = unsafe { vmb_sys::VmbStartup(ptr::null()) };
+        let rc = unsafe { (self.state.api.VmbStartup())(ptr::null()) };
         if let Err(e) = check(rc) {
             STARTED.store(false, Ordering::SeqCst);
             return Err(e);
@@ -79,7 +99,7 @@ impl VmbRuntime for VmbFfiRuntime {
         if STARTED.swap(false, Ordering::SeqCst) {
             // SAFETY: we owned the started-flag, so calling Shutdown is
             // the correct pairing.
-            unsafe { vmb_sys::VmbShutdown() };
+            unsafe { (self.state.api.VmbShutdown())() };
             debug!("Vimba X runtime shut down");
         }
     }
@@ -91,7 +111,7 @@ impl VmbRuntime for VmbFfiRuntime {
         // SAFETY: null buffer + zero list length is the documented
         // size-query form.
         unsafe {
-            check(vmb_sys::VmbCamerasList(
+            check((self.state.api.VmbCamerasList())(
                 ptr::null_mut(),
                 0,
                 &mut count,
@@ -106,7 +126,7 @@ impl VmbRuntime for VmbFfiRuntime {
         let mut num_found: u32 = 0;
         // SAFETY: `buf.as_mut_ptr()` points to `count` valid slots.
         unsafe {
-            check(vmb_sys::VmbCamerasList(
+            check((self.state.api.VmbCamerasList())(
                 buf.as_mut_ptr(),
                 count,
                 &mut num_found,
@@ -135,7 +155,7 @@ impl VmbRuntime for VmbFfiRuntime {
         // SAFETY: `c_id` lives until the end of this call; `handle` is
         // a valid out-parameter.
         unsafe {
-            check(vmb_sys::VmbCameraOpen(
+            check((self.state.api.VmbCameraOpen())(
                 c_id.as_ptr(),
                 access_mode,
                 &mut handle,
@@ -161,7 +181,7 @@ impl VmbRuntime for VmbFfiRuntime {
             // SAFETY: `raw.0` came from a successful `VmbCameraOpen`
             // and has not been closed yet.
             unsafe {
-                let _ = vmb_sys::VmbCameraClose(raw.0);
+                let _ = (self.state.api.VmbCameraClose())(raw.0);
             }
         }
     }
@@ -176,7 +196,7 @@ impl VmbRuntime for VmbFfiRuntime {
         // SAFETY: `c_path` lives until end of call; null settings + zero
         // size is the documented "use defaults" form.
         unsafe {
-            check(vmb_sys::VmbSettingsLoad(
+            check((self.state.api.VmbSettingsLoad())(
                 raw,
                 c_path.as_ptr(),
                 ptr::null(),
@@ -193,7 +213,7 @@ impl VmbRuntime for VmbFfiRuntime {
         })?;
         // SAFETY: `cmd` lives until end of call.
         unsafe {
-            check(vmb_sys::VmbFeatureCommandRun(raw, cmd.as_ptr()))?;
+            check((self.state.api.VmbFeatureCommandRun())(raw, cmd.as_ptr()))?;
         }
         Ok(())
     }
@@ -205,33 +225,27 @@ impl VmbRuntime for VmbFfiRuntime {
         let mut payload: u32 = 0;
         // SAFETY: `payload` is a valid out-parameter.
         unsafe {
-            check(vmb_sys::VmbPayloadSizeGet(raw, &mut payload))?;
+            check((self.state.api.VmbPayloadSizeGet())(raw, &mut payload))?;
         }
         Ok(payload)
     }
 
     fn announce_frame(&self, h: CameraHandle, size: u32) -> Result<FrameSlotId> {
         let raw = self.resolve_camera(h)?;
-        // Resolve the callback later (in queue_frame); here we just set
-        // up the context with a placeholder callback. But the
-        // TrampolineContext wants an Arc<FrameCallback> at construction.
-        // We fix this by deferring: announce allocates the context with
-        // a "panicking" placeholder, and queue_frame swaps in the real
-        // callback via a dedicated method. See below.
-        //
-        // Actually simpler: store the announced slot's Box separately
-        // from its callback. The TrampolineContext holds both, but at
-        // announce time the callback slot is Arc::new(FrameCallback::new
-        // (|_| {})) — a no-op — and queue_frame replaces the callback
-        // before issuing VmbCaptureFrameQueue.
+        // At announce time the callback slot is a no-op; the real
+        // closure arrives via `queue_frame` (see below).
         let noop: Arc<FrameCallback> = Arc::new(FrameCallback::new(|_| {}));
-        let mut ctx = Box::new(TrampolineContext::new(noop, size as usize));
+        let mut ctx = Box::new(TrampolineContext::new(
+            noop,
+            size as usize,
+            Arc::clone(&self.state.api),
+        ));
         let frame_ptr = ctx.vmb_frame_mut_ptr();
         // SAFETY: `frame_ptr` points into heap memory owned by `ctx`;
         // we retain `ctx` in `self.state.frames` so the pointer stays
         // valid until `frame_revoke_all`.
         unsafe {
-            check(vmb_sys::VmbFrameAnnounce(
+            check((self.state.api.VmbFrameAnnounce())(
                 raw,
                 frame_ptr as *const _,
                 mem::size_of::<vmb_sys::VmbFrame_t>() as u32,
@@ -249,7 +263,7 @@ impl VmbRuntime for VmbFfiRuntime {
     fn capture_start(&self, h: CameraHandle) -> Result<()> {
         let raw = self.resolve_camera(h)?;
         // SAFETY: `raw` is a valid opened camera handle.
-        unsafe { check(vmb_sys::VmbCaptureStart(raw)) }
+        unsafe { check((self.state.api.VmbCaptureStart())(raw)) }
     }
 
     fn queue_frame(&self, h: CameraHandle, slot: FrameSlotId, cb: FrameCallbackId) -> Result<()> {
@@ -277,7 +291,7 @@ impl VmbRuntime for VmbFfiRuntime {
         // SAFETY: `frame_ptr` still points at the same heap-allocated
         // frame; the trampoline function pointer has static linkage.
         unsafe {
-            check(vmb_sys::VmbCaptureFrameQueue(
+            check((self.state.api.VmbCaptureFrameQueue())(
                 raw,
                 frame_ptr as *const _,
                 Some(frame_callback_trampoline),
@@ -291,7 +305,7 @@ impl VmbRuntime for VmbFfiRuntime {
         };
         // SAFETY: best-effort teardown; safe no-op if capture not started.
         unsafe {
-            let _ = vmb_sys::VmbCaptureEnd(raw);
+            let _ = (self.state.api.VmbCaptureEnd())(raw);
         }
     }
 
@@ -301,7 +315,7 @@ impl VmbRuntime for VmbFfiRuntime {
         };
         // SAFETY: best-effort teardown.
         unsafe {
-            let _ = vmb_sys::VmbCaptureQueueFlush(raw);
+            let _ = (self.state.api.VmbCaptureQueueFlush())(raw);
         }
     }
 
@@ -311,7 +325,7 @@ impl VmbRuntime for VmbFfiRuntime {
         };
         // SAFETY: best-effort teardown.
         unsafe {
-            let _ = vmb_sys::VmbFrameRevokeAll(raw);
+            let _ = (self.state.api.VmbFrameRevokeAll())(raw);
         }
         // With all SDK-side references dropped, it is safe to release
         // the trampoline contexts (and their backing buffers).
@@ -341,7 +355,10 @@ impl VmbRuntime for VmbFfiRuntime {
                 context: FEATURE_EVENT_CAMERA_DISCOVERY,
             })?;
 
-        let ctx: Box<DiscoveryTrampolineCtx> = Box::new(DiscoveryTrampolineCtx { callback });
+        let ctx: Box<DiscoveryTrampolineCtx> = Box::new(DiscoveryTrampolineCtx {
+            callback,
+            api: Arc::clone(&self.state.api),
+        });
         let ctx_ptr: *mut DiscoveryTrampolineCtx = Box::into_raw(ctx);
 
         // SAFETY: `G_VMB_HANDLE` is the documented global sentinel,
@@ -350,7 +367,7 @@ impl VmbRuntime for VmbFfiRuntime {
         // at a heap allocation that stays live until we reclaim it in
         // `unregister_discovery`.
         let rc = unsafe {
-            vmb_sys::VmbFeatureInvalidationRegister(
+            (self.state.api.VmbFeatureInvalidationRegister())(
                 vmb_sys::G_VMB_HANDLE,
                 feature.as_ptr(),
                 Some(discovery_trampoline),
@@ -385,29 +402,23 @@ impl VmbRuntime for VmbFfiRuntime {
 
         // SAFETY: `G_VMB_HANDLE` + `state.feature` were used at register
         // time; the callback fn pointer matches; this call blocks until
-        // in-flight callbacks have returned.
-        let rc = unsafe {
-            vmb_sys::VmbFeatureInvalidationUnregister(
+        // in-flight callbacks have returned. Best-effort — we proceed
+        // to reclaim the context even on non-zero return (leaking the
+        // registration on the SDK side is preferable to leaking Rust
+        // memory and risking a double-free on the next unregister).
+        unsafe {
+            let _ = (self.state.api.VmbFeatureInvalidationUnregister())(
                 vmb_sys::G_VMB_HANDLE,
                 state.feature.as_ptr(),
                 Some(discovery_trampoline),
-            )
-        };
-        if rc != 0 {
-            warn!(
-                code = rc,
-                "VmbFeatureInvalidationUnregister failed for EventCameraDiscovery"
             );
-        } else {
-            debug!("camera discovery unregistered");
         }
-        if !state.ctx_ptr.is_null() {
-            // SAFETY: `ctx_ptr` was produced by `Box::into_raw` in
-            // `register_discovery` and has not been reclaimed yet. By
-            // contract the SDK has finished with it (unregister blocks
-            // on in-flight callbacks).
-            drop(unsafe { Box::from_raw(state.ctx_ptr) });
-        }
+        // SAFETY: `ctx_ptr` was produced by `Box::into_raw` in
+        // `register_discovery` and is non-null by construction — no
+        // code path stores a null pointer into `discovery_regs`. By
+        // contract the SDK has finished with it (unregister blocks on
+        // in-flight callbacks).
+        drop(unsafe { Box::from_raw(state.ctx_ptr) });
     }
 
     // --- Callback installation ------------------------------------------

@@ -1,22 +1,21 @@
 //! FFI adapter for the `vmb-core` [`VmbRuntime`] port.
 //!
-//! [`VmbFfiRuntime`] is the production backend that links against the
-//! Vimba X C API. When the `sdk` feature is off, the crate compiles to an
-//! empty rlib — [`VmbFfiRuntime`] simply does not exist, which is enough
-//! to keep downstream `cargo build` green on hosts without the SDK.
+//! [`VmbFfiRuntime`] is the production backend that loads `libVmbC` at
+//! runtime (via [`libloading`], wrapped by [`vmb_sys::VmbApi`]) and
+//! dispatches every `VmbRuntime` call through the resolved function
+//! pointers.
+//!
+//! Construction is fallible: if the Vimba X shared library is not
+//! present on the host, [`VmbFfiRuntime::new`] returns
+//! `Err(VmbError::LoadFailed { .. })`.
 //!
 //! [`VmbRuntime`]: vmb_core::VmbRuntime
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-#[cfg(feature = "sdk")]
 mod runtime;
-#[cfg(feature = "sdk")]
 mod state;
-#[cfg(feature = "sdk")]
 mod trampoline;
-#[cfg(feature = "sdk")]
 mod util;
 
-#[cfg(feature = "sdk")]
 pub use runtime::VmbFfiRuntime;

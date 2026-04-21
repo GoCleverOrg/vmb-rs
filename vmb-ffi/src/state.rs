@@ -16,6 +16,7 @@ use vmb_core::{
     CameraHandle, DiscoveryCallback, DiscoveryCallbackId, DiscoveryRegistrationHandle,
     FrameCallback, FrameCallbackId, FrameSlotId,
 };
+use vmb_sys::VmbApi;
 
 use crate::trampoline::{DiscoveryTrampolineCtx, TrampolineContext};
 
@@ -42,6 +43,10 @@ unsafe impl Send for RawCamera {}
 unsafe impl Sync for RawCamera {}
 
 pub(crate) struct FfiState {
+    /// Runtime-loaded VmbC handle. Shared with trampoline contexts so
+    /// they can re-queue frames / read discovery features from inside
+    /// C-ABI callbacks without racing on adapter Drop.
+    pub(crate) api: Arc<VmbApi>,
     pub(crate) cameras: Mutex<HashMap<CameraHandle, RawCamera>>,
     pub(crate) frames: Mutex<HashMap<FrameSlotId, Box<TrampolineContext>>>,
     pub(crate) frame_callbacks: Mutex<HashMap<FrameCallbackId, Arc<FrameCallback>>>,
@@ -73,8 +78,9 @@ unsafe impl Send for DiscoveryRegState {}
 unsafe impl Sync for DiscoveryRegState {}
 
 impl FfiState {
-    pub(crate) fn new() -> Arc<Self> {
+    pub(crate) fn new(api: Arc<VmbApi>) -> Arc<Self> {
         Arc::new(Self {
+            api,
             cameras: Mutex::new(HashMap::new()),
             frames: Mutex::new(HashMap::new()),
             frame_callbacks: Mutex::new(HashMap::new()),
