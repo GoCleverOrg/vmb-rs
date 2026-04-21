@@ -472,9 +472,9 @@ impl VmbApi {
     /// loaded.
     ///
     /// Intended exclusively for test code that wants to start from a
-    /// "trivially successful" baseline and then overwrite specific
-    /// `pub` function-pointer fields with spies or custom behaviour
-    /// (`api.VmbStartup = my_stub;`). Calling any function pointer
+    /// "trivially successful" baseline and then install spy / custom
+    /// function pointers via the `set_VmbXxx` setters
+    /// (`api.set_VmbStartup(my_stub);`). Calling any function pointer
     /// that has not been overridden is safe but unlikely to be useful
     /// — the stubs return immediately without writing any output
     /// parameters, so callers that read output-only arguments will

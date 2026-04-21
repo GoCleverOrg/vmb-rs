@@ -24,4 +24,7 @@ exclude_globs = [
 # `dlclose`. We have no way to simulate this in unit tests without a real
 # SDK install, so the mutant is unreachable by the test harness by
 # design.
-exclude_re = ["impl Drop for VmbApi"]
+# Regex is anchored to the exact mutant name cargo-mutants assigns to
+# this impl's drop method so future `VmbApi*` types (e.g. a future
+# `VmbApiBuilder`) aren't silently excluded.
+exclude_re = ["<impl Drop for VmbApi>::drop"]
