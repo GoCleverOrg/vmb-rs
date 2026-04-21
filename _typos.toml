@@ -3,6 +3,14 @@
 # headers. We cannot control identifier spelling (`isWriteable`,
 # `Writeable`, ...) and regenerating bindings would overwrite any
 # manual edits.
-extend-exclude = ["vmb-sys/src/bindings.rs"]
+#
+# vmb-sys/src/api.rs and vmb-sys/src/stubs.rs are hand-written but
+# must mirror the generated C function signatures verbatim — including
+# the `Writeable` / `writeable` spelling from `VmbC.h`.
+extend-exclude = [
+    "vmb-sys/src/bindings.rs",
+    "vmb-sys/src/api.rs",
+    "vmb-sys/src/stubs.rs",
+]
 
 [default.extend-words]
