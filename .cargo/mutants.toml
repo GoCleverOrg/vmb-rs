@@ -1,5 +1,17 @@
-# Generated FFI bindings have no hand-written logic to test. Excluding them
-# drops ~34% of mutants (all trivially missed) from every run.
+# Files excluded from mutation testing.
+#
+# `vmb-sys/src/bindings.rs` is bindgen-generated — no hand-written logic
+# to test; excluding drops ~34% of mutants (all trivially missed) from
+# every run.
+#
+# `vmb-sys/src/stubs.rs` is a module of trivial `return 0` no-op stubs
+# used only to construct `VmbApi::stub()` baselines in test code. Its
+# functions have no observable behaviour beyond type-checking the
+# expected signatures; mutating them cannot be distinguished by any
+# test that cares about adapter-level logic (tests that rely on
+# specific behaviour overwrite the function pointer before invoking
+# the code under test).
 exclude_globs = [
     "vmb-sys/src/bindings.rs",
+    "vmb-sys/src/stubs.rs",
 ]

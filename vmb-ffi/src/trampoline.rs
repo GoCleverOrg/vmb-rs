@@ -6,17 +6,20 @@
 //! 2. Recover the Rust-side context from a raw pointer the SDK holds on
 //!    our behalf (`frame.context[0]` for frame callbacks,
 //!    `user_context` for discovery callbacks).
-//! 3. Dispatch to the user closure.
+//! 3. Dispatch to the user closure (and, for frame callbacks, re-queue
+//!    the frame via the runtime-loaded VmbC function pointer stored on
+//!    the context).
 //!
-//! The two context structs exist only to own their closure refs and
-//! (for frame callbacks) the backing pixel buffer. They never escape
-//! this crate.
+//! The two context structs exist only to own their closure refs, the
+//! runtime `Arc<VmbApi>` handle, and (for frame callbacks) the backing
+//! pixel buffer. They never escape this crate.
 
 use std::slice;
 use std::sync::Arc;
 
 use tracing::warn;
 use vmb_core::{DiscoveryCallback, DiscoveryEvent, Frame, FrameCallback, PixelFormat};
+use vmb_sys::VmbApi;
 
 use crate::util::cstr_to_owned;
 
@@ -24,7 +27,8 @@ use crate::util::cstr_to_owned;
 ///
 /// Each `VmbFrame_t` has a 4-slot `context` array; we store a pointer to
 /// this struct in `context[0]`, and the trampoline uses it to retrieve
-/// the [`FrameCallback`] on every frame completion.
+/// the [`FrameCallback`] and runtime-loaded `VmbApi` on every frame
+/// completion.
 #[repr(C)]
 pub(crate) struct TrampolineContext {
     /// The SDK-visible frame descriptor. The `buffer` pointer inside
@@ -39,6 +43,9 @@ pub(crate) struct TrampolineContext {
     buffer: Box<[u8]>,
     /// The user's callback, shared across all announced frames.
     callback: Arc<FrameCallback>,
+    /// Runtime VmbC handle; used by the trampoline to re-queue frames
+    /// via `VmbCaptureFrameQueue` from inside the C callback.
+    api: Arc<VmbApi>,
 }
 
 // SAFETY: `TrampolineContext` holds a `VmbFrame_t` whose raw pointer
@@ -47,13 +54,18 @@ pub(crate) struct TrampolineContext {
 // between threads only while capture is not in flight (announce /
 // revoke paths hold the `FfiState.frames` mutex), and the SDK is the
 // only other reader — bound by Vimba's documented thread-safety rules.
+// The `Arc<VmbApi>` is already `Send + Sync`.
 unsafe impl Send for TrampolineContext {}
 unsafe impl Sync for TrampolineContext {}
 
 impl TrampolineContext {
     /// Allocate a new context with a `payload_bytes`-sized backing
-    /// buffer and the given shared callback.
-    pub(crate) fn new(callback: Arc<FrameCallback>, payload_bytes: usize) -> Self {
+    /// buffer, the given shared callback, and a VmbC API handle.
+    pub(crate) fn new(
+        callback: Arc<FrameCallback>,
+        payload_bytes: usize,
+        api: Arc<VmbApi>,
+    ) -> Self {
         let mut buffer: Box<[u8]> = vec![0u8; payload_bytes].into_boxed_slice();
         let buffer_ptr = buffer.as_mut_ptr() as *mut std::os::raw::c_void;
 
@@ -68,6 +80,7 @@ impl TrampolineContext {
             frame,
             buffer,
             callback,
+            api,
         }
     }
 
@@ -92,9 +105,11 @@ impl TrampolineContext {
 /// Per-registered-subscription trampoline context for camera discovery.
 ///
 /// Hands the SDK a thin `*mut c_void` pointer while preserving a live
-/// `Arc<DiscoveryCallback>` to dispatch to.
+/// `Arc<DiscoveryCallback>` to dispatch to plus the runtime `Arc<VmbApi>`
+/// needed to read discovery-event features from inside the callback.
 pub(crate) struct DiscoveryTrampolineCtx {
     pub(crate) callback: Arc<DiscoveryCallback>,
+    pub(crate) api: Arc<VmbApi>,
 }
 
 /// C-ABI trampoline that Vimba invokes on every received frame.
@@ -163,9 +178,11 @@ pub(crate) unsafe extern "C" fn frame_callback_trampoline(
         // Re-queue the frame so the SDK keeps delivering. Best-effort;
         // error codes are unrecoverable from inside a C callback.
         // SAFETY: `camera_handle` and `frame_ptr` came from the SDK
-        // itself; the trampoline function pointer is ourselves.
+        // itself; the trampoline function pointer is ourselves; the
+        // runtime-loaded VmbC function pointer stays live for the
+        // lifetime of `ctx.api`.
         unsafe {
-            let _ = vmb_sys::VmbCaptureFrameQueue(
+            let _ = (ctx.api.VmbCaptureFrameQueue)(
                 camera_handle,
                 frame_ptr as *const _,
                 Some(frame_callback_trampoline),
@@ -209,14 +226,14 @@ pub(crate) unsafe extern "C" fn discovery_trampoline(
 
         // SAFETY: same argument as the surrounding fn — the SDK-supplied
         // handle is valid for the duration of this invocation.
-        let id = unsafe { read_string_feature(handle, FEATURE_DISCOVERY_CAMERA_ID) };
+        let id = unsafe { read_string_feature(&ctx.api, handle, FEATURE_DISCOVERY_CAMERA_ID) };
         let Some(id) = id else {
             warn!("discovery callback: could not read EventCameraDiscoveryCameraID");
             return;
         };
 
         // SAFETY: see above.
-        let kind = unsafe { read_enum_feature(handle, FEATURE_DISCOVERY_TYPE) };
+        let kind = unsafe { read_enum_feature(&ctx.api, handle, FEATURE_DISCOVERY_TYPE) };
         let Some(kind) = kind else {
             warn!(
                 camera_id = %id,
@@ -246,14 +263,18 @@ pub(crate) unsafe extern "C" fn discovery_trampoline(
 /// # Safety
 ///
 /// `handle` must be a valid Vmb handle appropriate to the named feature.
-unsafe fn read_string_feature(handle: vmb_sys::VmbHandle_t, name: &str) -> Option<String> {
+unsafe fn read_string_feature(
+    api: &VmbApi,
+    handle: vmb_sys::VmbHandle_t,
+    name: &str,
+) -> Option<String> {
     let c_name = std::ffi::CString::new(name).ok()?;
     let mut buf = [0u8; 256];
     let mut filled: u32 = 0;
     // SAFETY: `c_name` lives until the end of the call; `buf` is valid
     // for `buf.len()` bytes; `filled` is a valid out-parameter.
     let rc = unsafe {
-        vmb_sys::VmbFeatureStringGet(
+        (api.VmbFeatureStringGet)(
             handle,
             c_name.as_ptr(),
             buf.as_mut_ptr() as *mut std::os::raw::c_char,
@@ -275,12 +296,16 @@ unsafe fn read_string_feature(handle: vmb_sys::VmbHandle_t, name: &str) -> Optio
 /// # Safety
 ///
 /// `handle` must be a valid Vmb handle appropriate to the named feature.
-unsafe fn read_enum_feature(handle: vmb_sys::VmbHandle_t, name: &str) -> Option<String> {
+unsafe fn read_enum_feature(
+    api: &VmbApi,
+    handle: vmb_sys::VmbHandle_t,
+    name: &str,
+) -> Option<String> {
     let c_name = std::ffi::CString::new(name).ok()?;
     let mut value_ptr: *const std::os::raw::c_char = std::ptr::null();
     // SAFETY: `c_name` lives until the end of the call; `value_ptr` is
     // a valid out-parameter.
-    let rc = unsafe { vmb_sys::VmbFeatureEnumGet(handle, c_name.as_ptr(), &mut value_ptr) };
+    let rc = unsafe { (api.VmbFeatureEnumGet)(handle, c_name.as_ptr(), &mut value_ptr) };
     if rc != 0 || value_ptr.is_null() {
         return None;
     }

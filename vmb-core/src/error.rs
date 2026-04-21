@@ -70,6 +70,16 @@ pub enum VmbError {
         /// The actual byte count delivered by the SDK.
         actual: usize,
     },
+
+    /// Failed to load the Vimba X shared library at runtime, or resolve
+    /// one of its symbols. Typically surfaced from `VmbFfiRuntime::new`
+    /// when the SDK is not installed on the host.
+    #[error("failed to load Vimba X runtime: {message}")]
+    LoadFailed {
+        /// Human-readable description of the loader failure, including
+        /// the path(s) tried and the underlying OS error.
+        message: String,
+    },
 }
 
 /// Map a Vimba error code to its static name. Returns `"VmbErrorUnknown"`
@@ -282,5 +292,15 @@ mod tests {
     #[test]
     fn capture_already_running_display() {
         assert!(format!("{}", VmbError::CaptureAlreadyRunning).contains("already running"));
+    }
+
+    #[test]
+    fn load_failed_display_includes_message() {
+        let err = VmbError::LoadFailed {
+            message: "libVmbC.so: cannot open shared object file".to_string(),
+        };
+        let s = format!("{err}");
+        assert!(s.contains("libVmbC.so"), "loader message missing from {s}");
+        assert!(s.contains("load"), "error descriptor missing from {s}");
     }
 }

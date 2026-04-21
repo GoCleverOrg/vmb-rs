@@ -1,29 +1,26 @@
 //! Safe Rust wrapper around Allied Vision Vimba X (VmbC).
 //!
 //! This crate is the publishable facade of the `vmb-rs` workspace. It
-//! re-exports the domain types and ports from [`vmb_core`], and — when
-//! the `sdk` feature is enabled — the production [`VmbFfiRuntime`]
-//! adapter from [`vmb_ffi`] plus a convenience [`real`] constructor that
-//! wires the two together.
+//! re-exports the domain types and ports from [`vmb_core`] plus the
+//! production [`VmbFfiRuntime`] adapter from [`vmb_ffi`], and provides a
+//! convenience [`real`] constructor that wires the two together.
+//!
+//! The Vimba X C library is loaded dynamically at runtime by
+//! [`VmbFfiRuntime::new`]; there is no build-time dependency on the SDK.
+//! `cargo build` succeeds on hosts where `libVmbC` is not installed —
+//! [`real`] simply returns `Err(VmbError::LoadFailed { .. })` in that
+//! case.
 //!
 //! ## Typical use
 //!
 //! ```no_run
-//! # #[cfg(feature = "sdk")]
 //! # fn demo() -> vmb::Result<()> {
-//! let system = vmb::real()?;                   // starts the Vimba runtime
+//! let system = vmb::real()?;                   // loads libVmbC + starts the runtime
 //! let cameras = system.list_cameras()?;
 //! println!("{} camera(s) detected", cameras.len());
 //! # Ok(())
 //! # }
 //! ```
-//!
-//! ## Feature flags
-//!
-//! * `sdk` (default **off**) — pulls in `vmb-ffi/sdk` which links
-//!   against `libVmbC` (Linux) or `VmbC.framework` (macOS). Without
-//!   this feature only the domain layer ([`VmbError`], [`Frame`], …)
-//!   is exposed and `cargo build` succeeds without the SDK installed.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -33,19 +30,20 @@ pub use vmb_core::{
     DiscoveryRegistrationHandle, Frame, FrameCallback, FrameCallbackId, FrameSlotId, PixelFormat,
     Result, VmbError, VmbRuntime, VmbSystem,
 };
-
-#[cfg(feature = "sdk")]
 pub use vmb_ffi::VmbFfiRuntime;
 
 /// Alias for the production `VmbSystem` type, parameterised with the
 /// [`VmbFfiRuntime`] adapter.
-#[cfg(feature = "sdk")]
 pub type RealVmbSystem = vmb_core::VmbSystem<VmbFfiRuntime>;
 
-/// Start the Vimba X runtime via the production FFI adapter.
+/// Load the Vimba X C library and start the runtime.
 ///
-/// Shorthand for `VmbSystem::startup(VmbFfiRuntime::new())`.
-#[cfg(feature = "sdk")]
+/// Shorthand for `VmbSystem::startup(VmbFfiRuntime::new()?)`.
+///
+/// Returns [`VmbError::LoadFailed`] if `libVmbC` cannot be loaded on the
+/// current host, and [`VmbError::AlreadyStarted`] if another runtime is
+/// already alive in this process.
 pub fn real() -> Result<RealVmbSystem> {
-    vmb_core::VmbSystem::startup(VmbFfiRuntime::new())
+    let runtime = VmbFfiRuntime::new()?;
+    vmb_core::VmbSystem::startup(runtime)
 }

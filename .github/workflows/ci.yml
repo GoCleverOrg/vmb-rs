@@ -59,9 +59,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      # Exclude `sdk` — building --features sdk requires the Vimba X SDK
-      # installed on the host, which standard CI runners do not have.
-      - run: cargo hack check --feature-powerset --workspace --exclude-features sdk
+      - run: cargo hack check --feature-powerset --workspace
 
   toml-lint:
     name: TOML & Typos

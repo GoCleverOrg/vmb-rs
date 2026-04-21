@@ -4,6 +4,48 @@ All notable changes to the `vmb-rs` workspace will be documented in this
 file. The format is based on [Keep a Changelog](https://keepachangelog.com),
 and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [0.3.0] — unreleased
+
+### Changed — breaking
+
+- `vmb-sys` now loads `libVmbC` at runtime via [`libloading`] rather than
+  linking against it at build time. `cargo build --workspace` succeeds on
+  any host, with or without the Vimba X SDK installed; missing-SDK
+  conditions surface at runtime as `VmbLoadError` / `VmbError::LoadFailed`.
+- `VmbFfiRuntime::new()` now returns `Result<Self, VmbError>` (previously
+  infallible). It calls `VmbApi::load()` internally and propagates
+  `VmbError::LoadFailed { .. }` when `libVmbC` is unavailable.
+- `vmb::real()` is fallible for the same reason. Callers that previously
+  relied on the infallible signature (`vmb::real()` returning
+  `Result<_, VmbError::AlreadyStarted>` only) must handle the new
+  `VmbError::LoadFailed` variant.
+- The `sdk` Cargo feature has been deleted from `vmb-sys`, `vmb-ffi`, and
+  `vmb`. Dependents should remove any `--features sdk`,
+  `features = ["sdk"]`, or `vmb-ffi/sdk` references. The `vmb`/`vmb-ffi`
+  crates now always expose their full API.
+
+### Added
+
+- `vmb_sys::VmbApi` — runtime-loaded handle containing one function
+  pointer per VmbC entry point. Exposed as `pub` fields so test code can
+  construct mocks without loading a real library via
+  `VmbFfiRuntime::with_api`.
+- `vmb_sys::VmbLoadError` — library-open and symbol-resolution errors.
+- `vmb_core::VmbError::LoadFailed { message: String }` — runtime loader
+  failure surfaced through the domain error type.
+- `VmbFfiRuntime::with_api(Arc<VmbApi>)` — test-only constructor that
+  accepts a caller-supplied `VmbApi` (e.g. built from mock function
+  pointers) without loading a shared library.
+
+### Removed
+
+- `vmb-sys/build.rs` (runtime loading means no linker directives).
+- `links = "VmbC"` from `vmb-sys/Cargo.toml`.
+- `[features] sdk = []` from `vmb-sys`, `vmb-ffi`, and `vmb`.
+- `--exclude-features sdk` from `.github/workflows/ci.yml` and `Makefile`.
+
+[`libloading`]: https://crates.io/crates/libloading
+
 ## [0.2.1] — 2026-04-15
 
 Non-breaking patch release. **FakeVmbRuntime API extension; no

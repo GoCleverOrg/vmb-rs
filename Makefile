@@ -54,10 +54,8 @@ rust-test:
 rust-nextest:
 	@$(RUST_ENV) cargo nextest run --workspace
 
-# Exclude `sdk` (and any feature that transitively enables it) — building
-# --features sdk requires the Vimba X SDK on the host.
 rust-test-features:
-	@$(RUST_ENV) cargo hack check --feature-powerset --workspace --exclude-features sdk
+	@$(RUST_ENV) cargo hack check --feature-powerset --workspace
 
 # --- Mutation testing ---
 

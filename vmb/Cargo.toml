@@ -11,16 +11,9 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
-[features]
-default = []
-# Enables the real Vimba SDK backend via `vmb-ffi/sdk`. When off, only
-# the domain layer (error, frame, types) is exposed and `cargo build`
-# succeeds without the SDK installed.
-sdk = ["dep:vmb-ffi", "vmb-ffi/sdk"]
-
 [dependencies]
-vmb-core = { version = "0.2.1", path = "../vmb-core" }
-vmb-ffi = { version = "0.2.1", path = "../vmb-ffi", optional = true }
+vmb-core = { version = "0.3.0", path = "../vmb-core" }
+vmb-ffi = { version = "0.3.0", path = "../vmb-ffi" }
 
 [dev-dependencies]
 # Path-only: only used by the `error_drift` integration test which
